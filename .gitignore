@@ -1,0 +1,14 @@
+# Security & Secrets
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Build & Runtime
+node_modules/
+__pycache__/
+*.pyc
+dist/
+.DS_Store
