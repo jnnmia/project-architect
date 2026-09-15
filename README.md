@@ -5,7 +5,7 @@
 [![skills.sh](https://img.shields.io/badge/skills.sh-project--architect-000000?logo=vercel&logoColor=white)](https://skills.sh/jnnmia/project-architect)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-1.0.0-green.svg)](https://github.com/jnnmia/project-architect/releases)
+[![Version](https://img.shields.io/badge/version-1.0.1-green.svg)](https://github.com/jnnmia/project-architect/releases)
 [![CI](https://img.shields.io/badge/build-passing-brightgreen.svg)](.github/workflows/ci.yml)
 
 Project Architect 是一个面向 AI 辅助研发的工程规范与架构脚手架工具。它通过量化决策树引导技术选型，确立不可违背的项目底线规则（Ground Rules），并通过边界标记将工程纪律安全同步至 Cursor、Claude Code、GitHub Copilot、Gemini CLI 等多 Agent 开发环境。
@@ -37,20 +37,20 @@ Project Architect 是一个面向 AI 辅助研发的工程规范与架构脚手�
 2. **规约越聊越忘**：初期约定好的分层原则与测试先行，几轮对话后就被 AI 抛诸脑后，代码开始出现循环引用和无卡点改动。
 3. **本地提示词被冲掉**：常规脚本分发规则时容易整文件覆盖，把开发者在 `CLAUDE.md` 或 `.cursor/rules/` 里保留的个人偏好彻底抹除。
 
-Project Architect 将架构约束沉淀为结构化的底线规则，强制方案设计提供代码级凭证（Evidence），并通过非侵入标记管理规则注入，让项目在多 Agent 协同下始终保持既定架构形状。
+Project Architect 将技术选型与架构原则沉淀为结构化的核心规则，通过非侵入标记管理规则注入，让项目在多 Agent 辅助开发下保持清晰稳定的代码结构。
 
 ---
 
 ## 核心机制
 
-### 1. 底线规则硬约束 (Ground Rules as Law)
-项目底线规则存放在 `.specify/memory/constitution.md`，使用严格的 RFC 2119 规范性用词（`MUST` / `MUST NOT`）。任何与底线相悖的代码改动或技术引入均判定为阻断项，必须修改方案，不得擅自妥协。
+### 1. 核心工程规则 (Ground Rules Definition)
+项目核心规则存放在 `.specify/memory/constitution.md`，采用明确的 RFC 2119 规范性用词（`MUST` / `MUST NOT`）。方案设计与代码实现需遵守核心原则，确保架构分层与依赖受控。
 
 ### 2. 标记隔离非侵入 (Zero-Invasive Injection)
 通过成对生命周期标记（`<!-- RULES START -->` 和 `<!-- RULES END -->`）界定系统注入区域。仅更新标记内部的规约摘要，标记前后的用户私有配置（如构建别名、环境变量、调试技巧）原样保留。
 
-### 3. 量化选型与检查卡点 (Data-Driven Tradeoffs & Checkpoints)
-拒绝主观定性评价。选型必须对齐冷启动时延、内存开销、二进制体积等具体数据。方案模板内置审查卡点，要求每一项合规声明均附带可复验的实现证据。
+### 3. 指标选型与流程自检 (Data-Driven Tradeoffs & Checkpoints)
+选型围绕冷启动时延、内存开销、二进制体积等具体数据进行权衡。方案模板内置自检项，要求改动符合分层与测试要求。
 
 ---
 
@@ -302,6 +302,7 @@ pytest -v
 
 | 版本 | 发布日期 | 变更说明 |
 |---|---|---|
+| **v1.0.1** | 2026-09-15 | 优化核心描述与规则模板语体，去除 AI 浮夸套话，精简注入提示词并完善自检项。 |
 | **v1.0.0** | 2026-09-15 | 初始正式版本发布。包含五阶段架构设计流、规则脚手架、多 Agent 标记注入、自动化测试套件、开源文档与示例工程。 |
 
 ---

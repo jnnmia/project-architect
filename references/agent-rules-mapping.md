@@ -25,7 +25,7 @@
 ```markdown
 <!-- RULES START -->
 ## Project Governance & Principles (Automated)
-Constitutional Single Source of Truth: `.specify/memory/constitution.md`
+Rules Source of Truth: `.specify/memory/constitution.md`
 [规则条目自动注入区域]
 <!-- RULES END -->
 ```

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "project-architect"
-version = "1.0.0"
+version = "1.0.1"
 description = "Project architecture, non-negotiable constitution scaffolding, and multi-agent rule synchronization tool."
 readme = "README.md"
 license = { text = "MIT" }

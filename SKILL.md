@@ -1,10 +1,10 @@
 ---
 name: project-architect
-description: "通过深入理解项目需求，从 0 到 1 梳理技术选型、确立工程底线规则与不可违背的硬约束，提供量化技术栈选型矩阵，并自动化生成适配多 AI 编码工具（Cursor、Claude Code、GitHub Copilot、Gemini CLI 等）的上下文规则脚手架与前置检查卡点。当用户需要从零立项新项目、制定项目规则、技术选型权衡、搭建工程脚手架或设置防劣化卡点时使用。"
+description: "用于新项目立项、技术选型对比与规则脚手架生成。分析业务需求与非功能指标，确立核心工程规则（分层隔离、单测保障、依赖控制），并自动生成或同步到 Cursor、Claude Code、GitHub Copilot、Gemini CLI 等工具的上下文规则文件。当用户需要新项目立项、技术选型权衡、搭建工程规范脚手架或初始化 AI 规则时使用。"
 compatibility: "需要本地已安装 Python 3 环境（支持标准库）。"
 allowed-tools: read edit glob grep bash
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: jnnmia
   agent_created: true
   tags:
@@ -16,39 +16,39 @@ metadata:
 
 # Project Architect (项目架构与规则搭建师)
 
-专注于在动手写代码前，把项目需求量化透视、选准技术栈并把不可妥协的底线规则固化下来，防止后续 AI 编码时出现架构散架、技术栈随意膨胀和规则遗忘。
+在新项目开始编码前，结合具体需求选定合适的技术栈，并把分层、单测和依赖控制等核心规则写成标准脚手架，避免后续 AI 辅助编码时随意引入无关依赖或偏离既定架构。
 
 ---
 
 ## 核心工作流 (Core Workflow)
 
 ```text
-[阶段 1: 需求透视] -> [阶段 2: 架构与选型] -> [阶段 3: 确立底线规则] -> [阶段 4: 规则脚手架] -> [阶段 5: 卡点移交]
+[阶段 1: 需求澄清] -> [阶段 2: 技术选型] -> [阶段 3: 确立核心规则] -> [阶段 4: 生成脚手架] -> [阶段 5: 规则交接]
 ```
 
-### 阶段 1：需求透视与单步澄清 (Requirements Elicitation)
-沿决策树逐项追问，**一次只问一个核心问题并附带推荐选项与权衡**：
+### 阶段 1：需求澄清与场景分析 (Requirements Clarification)
+沿决策树逐项梳理，**一次只问一个核心问题并附带推荐选项与权衡**：
 1. **业务目标**：系统服务对象与核心交互方式（CLI / API / Web）。
-2. **量化约束 (NFR)**：冷启动时延、内存驻留上限、网络依赖（纯离线/云端服务/私有内网）。
-3. **交付基线**：开发周期与维护预期。
+2. **量化约束**：冷启动时延、内存占用上限、网络依赖（纯离线 / 云端服务 / 私有内网）。
+3. **交付基线**：开发周期与后续维护预期。
 
-### 阶段 2：架构分层与技术栈科学选型 (Architecture & Tech Stack)
+### 阶段 2：技术选型与分层设计 (Architecture & Tech Stack)
 > 参考文档: `references/tech-stack-decision-matrix.md`
 
-1. **单体优先原则**：能用模块化单体解决的坚决不上微服务；三层单向依赖（Presentation -> Domain/Service -> Infrastructure）。
-2. **输出选型矩阵**：提供 1 种首选方案与 1 种备选方案（含语言版本、核心框架、存储选型、测试方案），必须给出具体的架构理由（Rationale）。
+1. **单体优先原则**：能用模块化单体解决的不引入微服务；三层单向依赖（Presentation -> Domain/Service -> Infrastructure）。
+2. **输出选型对比**：提供 1 种首选方案与 1 种备选方案（含语言版本、核心框架、存储选型、测试方案），说明具体的选型理由（Rationale）。
 
-### 阶段 3：确立工程底线规则 (Ground Rules Generation)
+### 阶段 3：提炼核心工程规则 (Ground Rules Definition)
 > 参考文档: `references/constitution-guide.md`
 
-1. **确立 4~5 条不可妥协原则**：
-   - 分层单向隔离（禁止高层反向依赖底层实现）。
-   - 测试驱动与覆盖基线（核心业务逻辑红绿测试）。
-   - 依赖与资源节约（克制引入第三方重量包）。
-   - 凭证与数据安全（严禁代码内硬编码密钥与内网私有资产）。
-2. **严格语义约束**：采用声明式 **MUST / MUST NOT**，禁止模糊推诿词。
+1. **确立 4~5 条核心工程原则**：
+   - 分层单向解耦（高层不反向依赖底层具体实现）。
+   - 测试保障基线（核心业务逻辑编写自动化测试）。
+   - 依赖与资源节约（克制引入重型第三方包，显式释放资源）。
+   - 凭证与数据安全（严禁代码内硬编码密钥与内部私有资产）。
+2. **规范性约束**：采用明确的 **MUST / MUST NOT**，避免模糊用词。
 
-### 阶段 4：规则脚手架分发 (Scaffolding & Multi-Agent Injection)
+### 阶段 4：规则脚手架与上下文注入 (Scaffolding & Context Injection)
 > 参考文档: `references/agent-rules-mapping.md`
 
 执行确定性脚本完成模板建立与多 Agent 规则注入：
@@ -66,9 +66,9 @@ python skills/project-architect/scripts/scaffold_rules.py inject \
   --dir <项目路径> --agents "agents,claude,cursor,copilot,gemini"
 ```
 
-### 阶段 5：检查卡点移交 (Verification & Checkpoints Handoff)
-向开发者交付已生成的规约文件结构，并告知后续落地路径：
-`需求规格 (spec.md) -> 方案设计与底线规则自检 (plan.md) -> 任务拆解与测试前置 (tasks.md) -> 代码实现`。
+### 阶段 5：规则交接与开发推进 (Workflow & Verification Handoff)
+向开发者交付已生成的规则文件结构，后续开发按标准流程推进：
+`需求规格 (spec.md) -> 方案设计与规则自检 (plan.md) -> 任务拆解与测试前置 (tasks.md) -> 代码实现`。
 
 ---
 

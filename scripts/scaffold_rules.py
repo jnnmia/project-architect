@@ -167,7 +167,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     if not agents_file.exists():
         baseline_agents = (
             f"# {project_name} - Agent Governance\n\n"
-            "> 通用工程宪法与不可协商门禁定义于 [.specify/memory/constitution.md](./.specify/memory/constitution.md)。\n"
+            "> 项目核心工程规范与底线规则定义于 [.specify/memory/constitution.md](./.specify/memory/constitution.md)。\n"
         )
         with open(agents_file, "w", encoding="utf-8") as f:
             f.write(baseline_agents)
@@ -212,26 +212,27 @@ def cmd_inject(args: argparse.Namespace) -> int:
 
     summary_lines = [
         "## Project Governance & Principles (Automated)",
-        f"Constitutional Single Source of Truth: `{args.constitution_path}`",
-        "Binding Architectural & Quality Invariants:",
+        f"Rules Source of Truth: `{args.constitution_path}`",
+        "",
+        "### Core Architectural & Quality Invariants:",
     ]
 
     if principles_data:
         for title, rules in principles_data:
-            summary_lines.append(f"### {title}")
+            summary_lines.append(f"#### {title}")
             for r in rules:
                 summary_lines.append(f"- {r}")
             if not rules:
                 summary_lines.append("- (Refer to constitution for detailed rules)")
     else:
-        summary_lines.append("- Refer to full constitution document for binding MUST/SHOULD principles.")
+        summary_lines.append("- Refer to rules document for binding MUST/SHOULD principles.")
 
     summary_lines.extend([
         "",
-        "Hard Execution Gates:",
-        "1. Every proposed plan MUST pass the Constitution Check gate with Evidence.",
-        "2. Automated test suite and scope guards are non-negotiable hard gates.",
-        "3. Never modify application source files when performing rule/constitution maintenance.",
+        "### Engineering Checkpoints:",
+        "1. Verify proposed plans against core project rules.",
+        "2. Maintain automated test coverage for critical business logic.",
+        "3. Keep rule updates within boundary markers without overwriting custom configurations.",
     ])
 
     summary_content = "\n".join(summary_lines)
