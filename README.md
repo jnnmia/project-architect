@@ -1,104 +1,100 @@
 # Project Architect
 
 [English](./README.en.md) | [简体中文](./README.md)
-[![skills.sh](https://skills.sh/b/jnnmia/project-architect)](https://skills.sh/jnnmia/project-architect)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/jnnmia/project-architect/actions/workflows/ci.yml/badge.svg)](https://github.com/jnnmia/project-architect/actions)
 
-
-Project Architect 是一个面向 AI 辅助研发的工程规范与架构脚手架工具。它通过量化决策树引导技术选型，确立不可违背的项目底线规则（Ground Rules），并通过边界标记将工程纪律安全同步至 Cursor、Claude Code、GitHub Copilot、Gemini CLI 等多 Agent 开发环境。
+Project Architect is an engineering governance and architecture scaffolding tool designed for AI-assisted software development. It guides technology stack selection through quantified decision trees, establishes non-negotiable project ground rules as hard constraints, and synchronizes rules across Cursor, Claude Code, GitHub Copilot, and Gemini CLI using non-invasive boundary markers.
 
 ---
 
-## 目录
+## Table of Contents
 
-- [为什么需要 Project Architect](#为什么需要-project-architect)
-- [核心机制](#核心机制)
-- [支持的 AI 工具](#支持的-ai-工具)
-- [安装与激活](#安装与激活)
-- [使用指南](#使用指南)
-  - [方式 1：在 AI 对话中一键立项（Skill 模式，推荐）](#方式-1在-ai-对话中一键立项skill-模式推荐)
-  - [方式 2：在本地终端直接使用（CLI 模式）](#方式-2在本地终端直接使用cli-模式)
-- [仓库拓扑](#仓库拓扑)
-- [自动化测试](#自动化测试)
-- [贡献指南](#贡献指南)
-- [版本记录](#版本记录)
-- [开源协议](#开源协议)
-
----
-
-## 为什么需要 Project Architect
-
-在依赖 AI 工具编码时，开发者经常遇到三类典型失控：
-
-1. **技术栈随意膨胀**：只是想写个轻量脚本，AI 却倾向于引入庞大的运行时、第三方全家桶和未经验证的重型依赖。
-2. **规约越聊越忘**：初期约定好的分层原则与测试先行，几轮对话后就被 AI 抛诸脑后，代码开始出现循环引用和无卡点改动。
-3. **本地提示词被冲掉**：常规脚本分发规则时容易整文件覆盖，把开发者在 `CLAUDE.md` 或 `.cursor/rules/` 里保留的个人偏好彻底抹除。
-
-Project Architect 将技术选型与架构原则沉淀为结构化的核心规则，通过非侵入标记管理规则注入，让项目在多 Agent 辅助开发下保持清晰稳定的代码结构。
+- [Why Project Architect](#why-project-architect)
+- [Core Mechanics](#core-mechanics)
+- [Supported AI Agents](#supported-ai-agents)
+- [Installation & Activation](#installation--activation)
+- [Usage Guide](#usage-guide)
+  - [Mode 1: Interactive AI Dialogue (Skill Mode, Recommended)](#mode-1-interactive-ai-dialogue-skill-mode-recommended)
+  - [Mode 2: Standalone Terminal Execution (CLI Mode)](#mode-2-standalone-terminal-execution-cli-mode)
+- [Project Topology](#project-topology)
+- [Automated Testing](#automated-testing)
+- [Contributing](#contributing)
+- [Changelog](#changelog)
+- [License](#license)
 
 ---
 
-## 核心机制
+## Why Project Architect
 
-### 1. 核心工程规则 (Ground Rules Definition)
-项目核心规则存放在 `.specify/memory/constitution.md`，采用明确的 RFC 2119 规范性用词（`MUST` / `MUST NOT`）。方案设计与代码实现需遵守核心原则，确保架构分层与依赖受控。
+When developing software alongside AI agents, developers frequently face three failure modes:
 
-### 2. 标记隔离非侵入 (Zero-Invasive Injection)
-通过成对生命周期标记（`<!-- RULES START -->` 和 `<!-- RULES END -->`）界定系统注入区域。仅更新标记内部的规约摘要，标记前后的用户私有配置（如构建别名、环境变量、调试技巧）原样保留。
+1. **Stack Bloat**: When asked to build a simple utility, AI models often pull in heavyweight runtimes, web frameworks, and unverified third-party libraries.
+2. **Context Drift**: Layering separation and test-first constraints agreed upon at turn 1 are often discarded after turn 5, resulting in circular imports and ungated code changes.
+3. **Prompt Overwrites**: Primitive rule sync scripts blindly overwrite target files, destroying custom prompt additions, aliases, and developer preferences in `CLAUDE.md` or `.cursor/rules/`.
 
-### 3. 指标选型与流程自检 (Data-Driven Tradeoffs & Checkpoints)
-选型围绕冷启动时延、内存开销、二进制体积等具体数据进行权衡。方案模板内置自检项，要求改动符合分层与测试要求。
+Project Architect formalizes architectural constraints into a single source of truth (`constitution.md`), enforces verifiable implementation evidence in task plans, and performs marker-bounded rule injection so projects retain their architectural boundaries over extended agent sessions.
 
 ---
 
-## 支持的 AI 工具
+## Core Mechanics
 
-脚手架原生支持将规约分发至以下主流 AI 编码环境：
+### 1. Ground Rules as Hard Constraints
+Project ground rules reside at `.specify/memory/constitution.md` using declarative RFC 2119 keywords (`MUST` / `MUST NOT`). Any proposed plan or code change that breaches ground rules is flagged as a critical blocker and must be revised.
 
-| 工具名称 | 规则载体文件 | 注入处理方式 |
+### 2. Zero-Invasive Marker Isolation
+All injected rules are wrapped inside paired boundary markers (`<!-- RULES START -->` and `<!-- RULES END -->`). Only content between the markers is managed by Project Architect; developer configurations outside the markers (such as custom build scripts, test aliases, or prompt tuning) remain untouched.
+
+### 3. Data-Driven Tradeoffs & Checkpoints
+Subjective statements are rejected. Technology choices must cite measurable metrics: cold-start latency, memory overhead, binary footprint, or dependency count. Planning templates require concrete implementation evidence before proceeding to code generation.
+
+---
+
+## Supported AI Agents
+
+Project Architect distributes rules to major AI programming environments:
+
+| Tool | Target Context File | Injection Strategy |
 |---|---|---|
-| **Universal Agents** | `AGENTS.md` | 标记包裹，作为跨 Agent 统一事实源入口 |
-| **Claude Code** | `CLAUDE.md` | 标记包裹，保留文件头部用户自定义命令 |
-| **Cursor IDE** | `.cursor/rules/project-rules.mdc` | 自动补全 YAML Frontmatter (`alwaysApply: true`) |
-| **GitHub Copilot** | `.github/copilot-instructions.md` | 标记包裹，写入项目级指令 |
-| **Google Gemini CLI** | `GEMINI.md` | 标记包裹，对接全局与项目级规约 |
-| **Windsurf** | `.windsurf/rules/project-rules.md` | 标记包裹，适配 Cascade 引擎规则目录 |
-| **Trae** | `.trae/rules/project_rules.md` | 标记包裹，适配 ByteDance Trae 上下文 |
+| **Universal Agents** | `AGENTS.md` | Marker-wrapped single entry point across agents |
+| **Claude Code** | `CLAUDE.md` | Marker-wrapped, preserving user header commands |
+| **Cursor IDE** | `.cursor/rules/project-rules.mdc` | Automatically injects YAML frontmatter (`alwaysApply: true`) |
+| **GitHub Copilot** | `.github/copilot-instructions.md` | Marker-wrapped repository-wide guidelines |
+| **Google Gemini CLI** | `GEMINI.md` | Marker-wrapped global and project rules |
+| **Windsurf** | `.windsurf/rules/project-rules.md` | Marker-wrapped Cascade engine rule directory |
+| **Trae** | `.trae/rules/project_rules.md` | Marker-wrapped ByteDance Trae context |
 
 ---
 
-## 安装与激活
+## Installation & Activation
 
-Project Architect 作为标准 Agent Skill 发布，支持通过 `npx skills` 包管理器一键安装至任意兼容 Agent（Claude Code、Cursor、Gemini CLI 等）：
+Project Architect is published as a standard Agent Skill. You can install it directly into any compatible agent runtime (Claude Code, Cursor, Gemini CLI, etc.) using the `npx skills` package manager:
 
-### 1. Skills CLI 一键安装（推荐）
+### 1. Skills CLI One-Line Install (Recommended)
 
 ```bash
-# 安装至当前项目（仅本工程生效）
+# Install to current project (local workspace only)
 npx skills add jnnmia/project-architect
 
-# 或全局安装（对本机所有兼容 Agent 生效）
+# Or install globally (available across all compatible agents on the machine)
 npx skills add jnnmia/project-architect -g -y
 
-# 或通过完整 GitHub 仓库地址安装
+# Or install via full GitHub repository URL
 npx skills add https://github.com/jnnmia/project-architect.git -g -y
 ```
 
-### 2. 让 AI 编程助手自动安装
+### 2. Ask Your AI Agent to Install
 
-将以下提示词直接发送给你正在使用的 AI 编程助手：
+Send the following instruction to your AI assistant:
 
 ```text
-请帮我安装 project-architect Skill。
-GitHub 地址：https://github.com/jnnmia/project-architect
-如果支持 skills CLI，请优先运行：npx skills add jnnmia/project-architect
-如果不支持，请将完整仓库目录克隆至当前环境的 skills 目录，确保目录名为 project-architect，且 SKILL.md 位于该目录根部。
+Please install the project-architect Skill for me.
+Repository: https://github.com/jnnmia/project-architect
+If you support skills CLI, run: npx skills add jnnmia/project-architect
+Otherwise, please clone or copy the repository into your skills directory with directory name 'project-architect', ensuring SKILL.md is at the root.
 ```
 
-### 3. Git 手动克隆
+### 3. Manual Git Clone
 
-将仓库克隆至当前 Agent 识别的技能目录（请将 `<SKILLS_DIR>` 替换为实际路径，如 `~/.gemini/config/skills` 或 `~/.agents/skills`）：
+Clone into your runtime's skills directory (replace `<SKILLS_DIR>` with your agent's skills path, e.g. `~/.gemini/config/skills` or `~/.agents/skills`):
 
 ```bash
 git clone https://github.com/jnnmia/project-architect.git <SKILLS_DIR>/project-architect
@@ -106,65 +102,65 @@ git clone https://github.com/jnnmia/project-architect.git <SKILLS_DIR>/project-a
 
 ---
 
-## 使用指南
+## Usage Guide
 
-Project Architect 支持两种使用模式：你可以把它当作 AI 助手的技能直接对话调用（推荐，零命令行门槛），也可以在终端作为独立脚手架直接运行。
+Project Architect supports two operating modes: interactively within AI chat sessions (recommended, zero CLI commands needed), or as a standalone CLI tool in your terminal.
 
-### 方式 1：在 AI 对话中一键立项（Skill 模式，推荐）
+### Mode 1: Interactive AI Dialogue (Skill Mode, Recommended)
 
-安装本 Skill 后（通过 `npx skills add jnnmia/project-architect`），无需手敲任何 Python 命令。直接在与 Cursor、Claude、Gemini 的对话中发送以下常用提示词即可唤起工作流：
+With the skill installed (via `npx skills add jnnmia/project-architect`), you do not need to memorize or run any Python commands. Simply paste one of the prompt templates into your conversation with Cursor, Claude, or Gemini:
 
-#### 常用提示词模板
-
-```text
-# 场景 A：从零立项并确定底线规则
-请使用 project-architect 帮我立项一个新工程：我要做一个本地运行的音频切片小工具，请引导我梳理指标、权衡技术选型并生成工程底线规则。
-
-# 场景 B：为已有仓库提取规约并同步给多 Agent
-请使用 project-architect 扫描当前项目，提取核心架构分层与不可妥协的底线，并注入到 CLAUDE.md 和 .cursor/rules/ 中。
-
-# 场景 C：提交方案前的合规卡点审查
-请使用 project-architect 审查我当前的方案（plan.md），对照底线规则核验代码级设计凭证，标出违规风险。
-```
-
-#### 人机交互流程实景
-
-当你发起立项时，AI 会沿决策树与你展开结构化对齐：
+#### Prompt Templates
 
 ```text
-[开发者]
-我想做一个能把 Markdown 批量转成 PDF 的小工具，帮我立项。
+# Scenario A: Scaffold a new project and define ground rules
+Please use project-architect to help me bootstrap a new project: I want to build a local audio slicer utility. Please guide me through non-functional metrics, evaluate technology options, and establish ground rules.
 
-[AI 单步追问量化指标]
-收到。在定规矩前先明确一个核心性能诉求：
-该工具是否需要复杂的 CSS 打印排版（自定义分页、复杂表格），还是纯文本极速转换？
-- 选项 A (推荐)：轻量级单二进制渲染（冷启动 < 30ms，分发包 < 20MB，无外部浏览器依赖）。
-- 选项 B：无头浏览器渲染（支持完整 Web CSS，但需预装 Chromium，包体积 > 150MB）。
+# Scenario B: Extract architecture invariants from an existing repository
+Please use project-architect to inspect the current project, extract core layering boundaries and non-negotiable constraints, and inject them into CLAUDE.md and .cursor/rules/.
 
-[开发者]
-选 A，必须单文件绿色运行，不要装庞大的浏览器。
-
-[AI 锁定选型、生成底线规则并自动在后台执行脚手架]
-选型已锁定：Go 1.22 + 纯 Go 渲染库。
-确立 3 条不可违背的底线规则：
-1. 静态编译：核心逻辑 MUST 编译为零动态依赖的单个静态二进制文件。
-2. 分层单向解耦：Parser 解析层与 Renderer 渲染层 MUST 保持接口级隔离。
-3. 错误结构化：转换失败 MUST 返回包含源文件行号的结构化错误，禁止 panic。
-
-[AI 自动完成文件初始化与规则分发，汇报生成结果]
-已生成 .specify/memory/constitution.md 并分发至 AGENTS.md、CLAUDE.md、.cursor/rules/。
+# Scenario C: Pre-commit checkpoint review on an implementation plan
+Please use project-architect to review my current plan (plan.md), checking implementation evidence against our ground rules and highlighting architectural risks.
 ```
 
-#### 规则注入前后效果对比 (以 CLAUDE.md 为例)
+#### Interactive Workflow Walkthrough
 
-注入前，文件中包含开发者手写的自定义别名与本地调试指令：
+When you trigger project initialization, the agent follows a structured decision tree:
+
+```text
+[Developer]
+I want to build a CLI utility to batch-convert Markdown files into PDFs. Help me scaffold the project.
+
+[Agent questions NFRs along the decision tree]
+Understood. Before fixing architecture rules, let us clarify one key constraint:
+Does the tool require complex print styling (custom headers/footers, dynamic page numbers, CSS paged media), or is it focused on fast, plain document conversion?
+- Option A (Recommended): Lightweight single-binary renderer (cold-start < 30ms, binary < 20MB, zero browser runtime dependencies).
+- Option B: Headless browser renderer (supports full CSS, but requires Chromium runtime, distribution size > 150MB).
+
+[Developer]
+Let us go with Option A. It must be a self-contained single binary with zero external dependencies.
+
+[Agent locks stack, generates ground rules, and executes scaffolding in background]
+Stack locked: Go 1.22 + pure Go document renderer.
+Establishing 3 non-negotiable ground rules:
+1. Static Compilation: Core logic MUST compile into a single static binary with zero dynamic C-runtime dependencies.
+2. Layer Decoupling: Parser and Renderer modules MUST maintain strict interface-level isolation.
+3. Structured Errors: File I/O errors MUST return line-numbered structured diagnostics. Panic calls are forbidden.
+
+[Agent finishes file generation and reports status]
+Scaffolded .specify/memory/constitution.md and distributed rules to AGENTS.md, CLAUDE.md, and .cursor/rules/.
+```
+
+#### Rule Injection Demonstration (Example: CLAUDE.md)
+
+Before injection, developer-defined commands exist at the top of the file:
 ```markdown
 # My Developer Setup
 - test: go test -v ./...
 - lint: golangci-lint run
 ```
 
-执行后，开发者手写指令原封不动保留，系统规则安全封闭在标记内：
+After injection, user configurations are fully preserved, and project rules are neatly enclosed within markers:
 ```markdown
 # My Developer Setup
 - test: go test -v ./...
@@ -175,12 +171,12 @@ Project Architect 支持两种使用模式：你可以把它当作 AI 助手的�
 Rules Source of Truth: `.specify/memory/constitution.md`
 
 ### Core Architectural & Quality Invariants:
-#### 1. 静态编译
-- 核心逻辑 MUST 编译为零动态依赖的单个静态二进制文件。
-#### 2. 分层单向解耦
-- Parser 解析层与 Renderer 渲染层 MUST 保持接口级隔离。
-#### 3. 错误结构化
-- 转换失败 MUST 返回包含源文件行号的结构化错误，禁止 panic。
+#### 1. Static Compilation
+- Core logic MUST compile into a single static binary with zero dynamic C-runtime dependencies.
+#### 2. Layer Decoupling
+- Parser and Renderer modules MUST maintain strict interface-level isolation.
+#### 3. Structured Errors
+- File I/O errors MUST return line-numbered structured diagnostics. Panic calls are forbidden.
 
 ### Engineering Checkpoints:
 1. Verify proposed plans against core project rules.
@@ -191,40 +187,40 @@ Rules Source of Truth: `.specify/memory/constitution.md`
 
 ---
 
-### 方式 2：在本地终端直接使用（CLI 模式）
+### Mode 2: Standalone Terminal Execution (CLI Mode)
 
-适合 CI/CD 流程、无 Agent 会话环境或偏好终端操作的开发者。
+Suitable for CI/CD pipelines, headless environments, or developers who prefer command-line automation.
 
-#### 环境准备
-- Python 3.8+（仅需 Python 标准库，零第三方 pip 依赖）。
-- Git。
+#### Prerequisites
+- Python 3.8+ (standard library only; zero external pip dependencies).
+- Git.
 
-#### 3 步终端流水线
+#### 3-Step Pipeline
 
 ```bash
-# 步骤 1：初始化底线规则与工作规划模板 (init)
-# 创建 .specify/memory/constitution.md、需求设计模板与基线 AGENTS.md
+# Step 1: Initialize ground rules and planning templates (init)
+# Generates .specify/memory/constitution.md, spec/plan/tasks templates, and baseline AGENTS.md
 python scripts/scaffold_rules.py init \
   --dir /path/to/project \
   --name "my-service" \
-  --purpose "高并发日志解析服务"
+  --purpose "High-throughput log parser"
 
-# 步骤 2：增量注入规则到各 AI 编程工具上下文 (inject)
-# 自动解析规则中的 MUST 约束，生成摘要并无侵入注入到指定工具文件
+# Step 2: Incrementally inject rules into agent context files (inject)
+# Parses MUST constraints from ground rules and injects summary inside boundary markers
 python scripts/scaffold_rules.py inject \
   --dir /path/to/project \
   --agents "agents,claude,cursor"
 
-# 步骤 3：合规检查 (validate)
-# 校验占位符是否全替换、是否包含 MUST 强制约束、是否有 Rationale 论证
+# Step 3: Verify governance compliance (validate)
+# Ensures no unresolved placeholders remain, MUST keywords exist, and rationales are provided
 python scripts/scaffold_rules.py validate \
   --dir /path/to/project
 ```
 
-#### CLI 实际执行输出示范
+#### Terminal Execution Sample Output
 
 ```bash
-$ python scripts/scaffold_rules.py init --dir ./md2pdf --name "md2pdf" --purpose "轻量离线转换工具"
+$ python scripts/scaffold_rules.py init --dir ./md2pdf --name "md2pdf" --purpose "Lightweight conversion CLI"
 [CREATED] Constitution initialized at: ./md2pdf/.specify/memory/constitution.md
 [CREATED] Template copied to: ./md2pdf/templates/plan-template.md
 [CREATED] Template copied to: ./md2pdf/templates/spec-template.md
@@ -244,63 +240,63 @@ $ python scripts/scaffold_rules.py validate --dir ./md2pdf
 
 ---
 
-## 仓库拓扑
+## Project Topology
 
 ```text
 skills/project-architect/
-├── SKILL.md                          # Skill 规范元数据与核心决策流程
-├── README.md                         # 简体中文使用说明
-├── README.en.md                      # 英文版说明
-├── LICENSE                           # MIT 开源许可证
-├── CONTRIBUTING.md                   # 协作规范与贡献流程
-├── pyproject.toml                    # 项目配置文件与 pytest 参数
-├── .gitignore                        # 忽略规则
-├── .github/workflows/ci.yml          # GitHub Actions 自动化测试流水线
+├── SKILL.md                          # Skill metadata and core workflow
+├── README.md                         # Chinese documentation
+├── README.en.md                      # English documentation
+├── LICENSE                           # MIT License
+├── CONTRIBUTING.md                   # Collaboration and contributing guidelines
+├── pyproject.toml                    # Package configuration and pytest parameters
+├── .gitignore                        # Git ignore patterns
+├── .github/workflows/ci.yml          # GitHub Actions CI workflow
 ├── scripts/
-│   └── scaffold_rules.py             # 规则脚手架与多 Agent 标记注入引擎
+│   └── scaffold_rules.py             # Scaffolding and marker injection engine
 ├── references/
-│   ├── constitution-guide.md         # 底线规则编写指南与案例
-│   ├── tech-stack-decision-matrix.md # 量化技术栈选型矩阵
-│   └── agent-rules-mapping.md        # 主流 AI 上下文文件映射详情
+│   ├── constitution-guide.md         # Ground rules authoring guide
+│   ├── tech-stack-decision-matrix.md # Quantified tech stack selection matrix
+│   └── agent-rules-mapping.md        # AI context file mapping details
 ├── assets/templates/
-│   ├── constitution-template.md      # 底线规则初始化模板
-│   ├── plan-template.md              # 带规则凭据审查的方案模板
-│   ├── spec-template.md              # 需求规格说明模板
-│   └── tasks-template.md             # 任务拆解与测试驱动模板
+│   ├── constitution-template.md      # Baseline ground rules template
+│   ├── plan-template.md              # Plan template with evidence checks
+│   ├── spec-template.md              # Specification template
+│   └── tasks-template.md             # Task breakdown with test gates
 ├── tests/
-│   └── test_scaffold_rules.py        # 单元测试套件（覆盖 init/inject/validate）
-└── examples/minimal-cli/             # 真实轻量 CLI 小工具落地完整范例
+│   └── test_scaffold_rules.py        # Automated test suite (init/inject/validate)
+└── examples/minimal-cli/             # Complete sample project demonstration
 ```
 
 ---
 
-## 自动化测试
+## Automated Testing
 
-项目附带针对脚手架核心功能的自动化测试套件，涵盖初始化、幂等性、标记恢复、Frontmatter 校验及错误拦截。
+Project Architect includes a test suite covering initialization, idempotency, marker recovery, frontmatter handling, and error detection.
 
 ```bash
-# 使用标准库 unittest 执行测试
+# Run with Python standard unittest
 python -m unittest discover -s tests -p "test_*.py" -v
 
-# 或使用 pytest 执行
+# Or run with pytest
 pytest -v
 ```
 
 ---
 
-## 贡献指南
+## Contributing
 
-欢迎提交 Issue 与 Merge Request。提交改动前，请遵循开发基线：
-- 严格保持零外部运行时依赖（仅使用 Python 3 标准库）。
-- 严格遵循零 Emoji 纪律。
-- 遵循统一的 Commit Message 规范。
-- 增补功能必须附带相应的单元测试用例。
+Issues and Merge Requests are welcome. Before contributing, please review the development baseline:
+- Strictly maintain zero external runtime dependencies (Python standard library only).
+- Strictly adhere to the zero-emoji policy.
+- Follow the concise commit message guidelines.
+- Add unit tests for any new features or bug fixes.
 
 ---
 
-## 版本记录
+## Changelog
 
-| 版本 | 发布日期 | 变更说明 |
+| Version | Release Date | Description |
 |---|---|---|
-| **v1.0.1** | 2026-09-15 | 优化核心描述与规则模板语体，去除 AI 浮夸套话，精简注入提示词并完善自检项。 |
-| **v1.0.0** | 2026-09-15 | 初始正式版本发布。包含五阶段架构设计流、规则脚手架、多 Agent 标记注入、自动化测试套件、开源文档与示例工程。 |
+| **v1.0.1** | 2026-09-15 | Refined wording in core descriptions and templates to eliminate AI buzzwords, streamlined rule injection prompts, and updated verification checklists. |
+| **v1.0.0** | 2026-09-15 | Baseline release. Features five-stage architectural workflow, ground rules scaffolding, multi-agent marker injection, automated test suite, open-source documentation, and working CLI example. |
