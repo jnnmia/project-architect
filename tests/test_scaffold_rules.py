@@ -139,6 +139,165 @@ class TestScaffoldRules(unittest.TestCase):
         exit_code = scaffold_rules.main(["validate", "--dir", str(self.test_dir)])
         self.assertEqual(exit_code, 0)
 
+    def test_inject_adversarial_arabic_numerals(self):
+        """Adversarial Test: Principles numbered with Arabic numerals (1., 2.)."""
+        mem_dir = self.test_dir / ".specify" / "memory"
+        mem_dir.mkdir(parents=True, exist_ok=True)
+        const_file = mem_dir / "constitution.md"
+        const_file.write_text(
+            "# Custom Constitution\n\n"
+            "## Core Principles\n\n"
+            "### 1. 架构分层设计\n"
+            "- 业务逻辑 MUST 与展示层严格解耦。\n"
+            "### 2. 自动化测试底线\n"
+            "- 核心接口变更 必须 具备自动化单测覆盖。\n",
+            encoding="utf-8"
+        )
+        exit_code = scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "claude"])
+        self.assertEqual(exit_code, 0)
+
+        claude_content = (self.test_dir / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn("#### 1. 架构分层设计", claude_content)
+        self.assertIn("业务逻辑 MUST 与展示层严格解耦。", claude_content)
+        self.assertIn("#### 2. 自动化测试底线", claude_content)
+        self.assertIn("核心接口变更 必须 具备自动化单测覆盖。", claude_content)
+        self.assertNotIn("Refer to rules document for binding MUST/SHOULD principles", claude_content)
+
+    def test_inject_adversarial_chinese_numerals(self):
+        """Adversarial Test: Principles numbered with Chinese characters (原则一, 原则二)."""
+        mem_dir = self.test_dir / ".specify" / "memory"
+        mem_dir.mkdir(parents=True, exist_ok=True)
+        const_file = mem_dir / "constitution.md"
+        const_file.write_text(
+            "# 宪法规范\n\n"
+            "## 核心原则\n\n"
+            "### 原则一：零第三方依赖\n"
+            "- 优先使用 Python 3 标准库。\n"
+            "### 原则二：零内网信息外泄\n"
+            "- 严禁 在公开代码中包含内网域名。\n",
+            encoding="utf-8"
+        )
+        exit_code = scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "agents"])
+        self.assertEqual(exit_code, 0)
+
+        agents_content = (self.test_dir / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("#### 原则一：零第三方依赖", agents_content)
+        self.assertIn("优先使用 Python 3 标准库。", agents_content)
+        self.assertIn("#### 原则二：零内网信息外泄", agents_content)
+        self.assertIn("严禁 在公开代码中包含内网域名。", agents_content)
+
+    def test_inject_adversarial_roman_beyond_five(self):
+        """Adversarial Test: Principles with Roman numerals > V (VI., X.)."""
+        mem_dir = self.test_dir / ".specify" / "memory"
+        mem_dir.mkdir(parents=True, exist_ok=True)
+        const_file = mem_dir / "constitution.md"
+        const_file.write_text(
+            "# Scaled Constitution\n\n"
+            "## Core Principles\n\n"
+            "### VI. 性能指标基线\n"
+            "- P99 接口耗时 MUST 小于 100ms。\n"
+            "### X. 容灾熔断策略\n"
+            "- 服务调用 MUST 具备重试上限与超时控制。\n",
+            encoding="utf-8"
+        )
+        exit_code = scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "claude"])
+        self.assertEqual(exit_code, 0)
+
+        claude_content = (self.test_dir / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn("#### VI. 性能指标基线", claude_content)
+        self.assertIn("P99 接口耗时 MUST 小于 100ms。", claude_content)
+        self.assertIn("#### X. 容灾熔断策略", claude_content)
+        self.assertIn("服务调用 MUST 具备重试上限与超时控制。", claude_content)
+
+    def test_inject_adversarial_unnumbered_titles(self):
+        """Adversarial Test: Principles with unnumbered plain headings."""
+        mem_dir = self.test_dir / ".specify" / "memory"
+        mem_dir.mkdir(parents=True, exist_ok=True)
+        const_file = mem_dir / "constitution.md"
+        const_file.write_text(
+            "# Constitution\n\n"
+            "## Core Principles\n\n"
+            "### Architectural Decoupling\n"
+            "- Components MUST expose clear public contracts.\n"
+            "### Fail Fast and Gracefully\n"
+            "- Unknown inputs SHOULD be rejected immediately.\n",
+            encoding="utf-8"
+        )
+        exit_code = scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "claude"])
+        self.assertEqual(exit_code, 0)
+
+        claude_content = (self.test_dir / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn("#### Architectural Decoupling", claude_content)
+        self.assertIn("Components MUST expose clear public contracts.", claude_content)
+        self.assertIn("#### Fail Fast and Gracefully", claude_content)
+        self.assertIn("Unknown inputs SHOULD be rejected immediately.", claude_content)
+
+    def test_inject_adversarial_scope_isolation(self):
+        """Adversarial Test: Does not extract subsections from Overview or Workflow."""
+        mem_dir = self.test_dir / ".specify" / "memory"
+        mem_dir.mkdir(parents=True, exist_ok=True)
+        const_file = mem_dir / "constitution.md"
+        const_file.write_text(
+            "# Constitution\n\n"
+            "## Overview\n\n"
+            "### Project Goals\n"
+            "- We MUST finish by end of week.\n\n"
+            "## Core Principles\n\n"
+            "### 1. True Principle\n"
+            "- Production code MUST have unit tests.\n\n"
+            "## Development Workflow & Checkpoints\n\n"
+            "### Review Gate\n"
+            "- PR MUST be reviewed.\n",
+            encoding="utf-8"
+        )
+        exit_code = scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "claude"])
+        self.assertEqual(exit_code, 0)
+
+        claude_content = (self.test_dir / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn("#### 1. True Principle", claude_content)
+        self.assertIn("Production code MUST have unit tests.", claude_content)
+        # Verify non-principles sections are NOT extracted
+        self.assertNotIn("Project Goals", claude_content)
+        self.assertNotIn("Review Gate", claude_content)
+
+    def test_inject_adversarial_filters_rationales(self):
+        """Adversarial Test: Rationale paragraphs are excluded from rule list."""
+        mem_dir = self.test_dir / ".specify" / "memory"
+        mem_dir.mkdir(parents=True, exist_ok=True)
+        const_file = mem_dir / "constitution.md"
+        const_file.write_text(
+            "# Constitution\n\n"
+            "## Core Principles\n\n"
+            "### 1. Minimal Complexity\n"
+            "- YAGNI: Do not implement unrequested features.\n"
+            "*Rationale:* Premature abstraction increases maintenance burden.\n"
+            "- Keep code simple.\n",
+            encoding="utf-8"
+        )
+        exit_code = scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "claude"])
+        self.assertEqual(exit_code, 0)
+
+        claude_content = (self.test_dir / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn("YAGNI: Do not implement unrequested features.", claude_content)
+        self.assertIn("Keep code simple.", claude_content)
+        self.assertNotIn("Premature abstraction", claude_content)
+
+    def test_inject_adversarial_strict_mode(self):
+        """Adversarial Test: --strict flag halts with exit code 1 when 0 principles found."""
+        mem_dir = self.test_dir / ".specify" / "memory"
+        mem_dir.mkdir(parents=True, exist_ok=True)
+        const_file = mem_dir / "constitution.md"
+        # Constitution without any principles
+        const_file.write_text("# Empty Constitution\n## Overview\nNo principles here.\n", encoding="utf-8")
+
+        # Without strict, injects fallback and exits 0
+        exit_code_normal = scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "claude"])
+        self.assertEqual(exit_code_normal, 0)
+
+        # With strict, fails with exit code 1
+        exit_code_strict = scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "claude", "--strict"])
+        self.assertEqual(exit_code_strict, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

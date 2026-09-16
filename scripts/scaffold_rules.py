@@ -177,6 +177,104 @@ def cmd_init(args: argparse.Namespace) -> int:
     return 0
 
 
+PRINCIPLES_SECTION_PATTERN = re.compile(
+    r"^##\s+.*(?:core\s+principles?|principles?|核心原则|核心规范|底线规则|ground\s+rules)",
+    re.IGNORECASE,
+)
+METADATA_SECTION_PATTERN = re.compile(
+    r"^##\s+.*(?:overview|workflow|checkpoint|impact\s+report|template|概览|简介|流程|卡点|模板|目录)",
+    re.IGNORECASE,
+)
+RATIONALE_LINE_PATTERN = re.compile(
+    r"^[*_~`#\s]*(?:rationale|说明|原因|背景)\b",
+    re.IGNORECASE,
+)
+
+
+def extract_principles(content: str) -> list[tuple[str, list[str]]]:
+    """Extract principles and their normative rules from markdown constitution content.
+
+    Resiliently handles:
+    - Roman numerals (I., II., VI., X., etc.)
+    - Arabic numerals (1., 2., etc.)
+    - Chinese numerals (原则一, 一、, etc.)
+    - Plain titles without numbers
+    - Scoped extraction to '## Core Principles' section if present
+    - Filtering out rationales and non-principle metadata sections
+    """
+    lines = content.splitlines()
+
+    # 1. Determine principle section scope
+    start_idx = 0
+    end_idx = len(lines)
+    has_principles_header = False
+
+    for i, raw_line in enumerate(lines):
+        line = raw_line.strip()
+        if PRINCIPLES_SECTION_PATTERN.match(line):
+            start_idx = i + 1
+            has_principles_header = True
+            break
+
+    if has_principles_header:
+        for i in range(start_idx, len(lines)):
+            line = lines[i].strip()
+            # Stop at the next major section (level 1 or 2 heading)
+            if re.match(r"^#{1,2}\s+", line) and not line.startswith("###"):
+                end_idx = i
+                break
+        scoped_lines = lines[start_idx:end_idx]
+    else:
+        # If no explicit Principles section header, use lines excluding known metadata sections
+        scoped_lines = []
+        in_metadata_section = False
+        for raw_line in lines:
+            line = raw_line.strip()
+            if METADATA_SECTION_PATTERN.match(line):
+                in_metadata_section = True
+            elif line.startswith("## "):
+                in_metadata_section = False
+
+            if not in_metadata_section:
+                scoped_lines.append(raw_line)
+
+    # 2. Extract subsections and rules
+    principles_data: list[tuple[str, list[str]]] = []
+    current_title: str | None = None
+    current_rules: list[str] = []
+
+    for raw_line in scoped_lines:
+        line = raw_line.strip()
+        # Detect principle heading (level 3 or level 4 heading)
+        header_match = re.match(r"^(?:###|####)\s+(.+)$", line)
+        if header_match:
+            title_candidate = header_match.group(1).strip()
+            if RATIONALE_LINE_PATTERN.match(title_candidate) or re.match(r"^(?:overview|workflow|checkpoint|概览|流程|卡点)", title_candidate, re.IGNORECASE):
+                continue
+
+            if current_title:
+                principles_data.append((current_title, current_rules))
+            current_title = title_candidate
+            current_rules = []
+            continue
+
+        # Detect bullet rule under current principle
+        if current_title:
+            bullet_match = re.match(r"^(?:[-*+]|\d+\.)\s+(.+)$", line)
+            if bullet_match:
+                rule_text = bullet_match.group(1).strip()
+                if RATIONALE_LINE_PATTERN.match(rule_text):
+                    continue
+                if len(rule_text) > 200:
+                    rule_text = rule_text[:197] + "..."
+                current_rules.append(rule_text)
+
+    if current_title:
+        principles_data.append((current_title, current_rules))
+
+    return principles_data
+
+
 def cmd_inject(args: argparse.Namespace) -> int:
     """Inject constitution summary into specified agent context files."""
     target_dir = Path(args.dir).resolve()
@@ -189,26 +287,7 @@ def cmd_inject(args: argparse.Namespace) -> int:
     with open(const_file, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Deep extraction: Principle title + MUST/MUST NOT/SHOULD bullet rules
-    principles_data: list[tuple[str, list[str]]] = []
-    current_title: str | None = None
-    current_rules: list[str] = []
-
-    for raw_line in content.splitlines():
-        line = raw_line.strip()
-        if line.startswith("### ") and any(tag in line for tag in ["I.", "II.", "III.", "IV.", "V."]):
-            if current_title:
-                principles_data.append((current_title, current_rules))
-            current_title = line.replace("### ", "").strip()
-            current_rules = []
-        elif current_title and line.startswith("- ") and any(kw in line for kw in ["MUST", "MUST NOT", "SHOULD"]):
-            rule_text = line[2:].strip()
-            if len(rule_text) > 120:
-                rule_text = rule_text[:117] + "..."
-            current_rules.append(rule_text)
-
-    if current_title:
-        principles_data.append((current_title, current_rules))
+    principles_data = extract_principles(content)
 
     summary_lines = [
         "## Project Governance & Principles (Automated)",
@@ -225,6 +304,11 @@ def cmd_inject(args: argparse.Namespace) -> int:
             if not rules:
                 summary_lines.append("- (Refer to constitution for detailed rules)")
     else:
+        warn_msg = f"[WARN] No principles extracted from {const_file}. Ensure principles are defined under '## Core Principles' with '### <Title>' headers."
+        print(warn_msg, file=sys.stderr)
+        if getattr(args, "strict", False):
+            print(f"[FAIL] Injection aborted due to --strict flag: 0 principles extracted.", file=sys.stderr)
+            return 1
         summary_lines.append("- Refer to rules document for binding MUST/SHOULD principles.")
 
     summary_lines.extend([
@@ -337,6 +421,11 @@ def main(argv: list[str] | None = None) -> int:
         "--constitution-path",
         default=".specify/memory/constitution.md",
         help="Project-relative path to constitution file",
+    )
+    p_inject.add_argument(
+        "--strict",
+        action="store_true",
+        help="Fail with exit code 1 if zero principles are extracted from constitution",
     )
 
     # Validate
