@@ -1,12 +1,10 @@
 # Project Architect
 
 [English](./README.en.md) | [简体中文](./README.md)
+[![skills.sh](https://skills.sh/b/jnnmia/project-architect)](https://skills.sh/jnnmia/project-architect)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/jnnmia/project-architect/actions/workflows/ci.yml/badge.svg)](https://github.com/jnnmia/project-architect/actions)
 
-[![skills.sh](https://img.shields.io/badge/skills.sh-project--architect-000000?logo=vercel&logoColor=white)](https://skills.sh/jnnmia/project-architect)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-1.0.1-green.svg)](https://github.com/jnnmia/project-architect/releases)
-[![CI](https://img.shields.io/badge/build-passing-brightgreen.svg)](.github/workflows/ci.yml)
 
 Project Architect 是一个面向 AI 辅助研发的工程规范与架构脚手架工具。它通过量化决策树引导技术选型，确立不可违背的项目底线规则（Ground Rules），并通过边界标记将工程纪律安全同步至 Cursor、Claude Code、GitHub Copilot、Gemini CLI 等多 Agent 开发环境。
 
@@ -290,7 +288,7 @@ pytest -v
 
 ## 贡献指南
 
-欢迎提交 Issue 与 Pull Request。提交改动前，请参阅 [CONTRIBUTING.md](CONTRIBUTING.md) 了解开发基线：
+欢迎提交 Issue 与 Merge Request。提交改动前，请遵循开发基线：
 - 严格保持零外部运行时依赖（仅使用 Python 3 标准库）。
 - 严格遵循零 Emoji 纪律。
 - 遵循统一的 Commit Message 规范。
@@ -304,9 +302,3 @@ pytest -v
 |---|---|---|
 | **v1.0.1** | 2026-09-15 | 优化核心描述与规则模板语体，去除 AI 浮夸套话，精简注入提示词并完善自检项。 |
 | **v1.0.0** | 2026-09-15 | 初始正式版本发布。包含五阶段架构设计流、规则脚手架、多 Agent 标记注入、自动化测试套件、开源文档与示例工程。 |
-
----
-
-## 开源协议
-
-本项目基于 [MIT License](LICENSE) 开源。

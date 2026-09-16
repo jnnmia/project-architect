@@ -1,12 +1,10 @@
 # Project Architect
 
 [English](./README.en.md) | [简体中文](./README.md)
+[![skills.sh](https://skills.sh/b/jnnmia/project-architect)](https://skills.sh/jnnmia/project-architect)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/jnnmia/project-architect/actions/workflows/ci.yml/badge.svg)](https://github.com/jnnmia/project-architect/actions)
 
-[![skills.sh](https://img.shields.io/badge/skills.sh-project--architect-000000?logo=vercel&logoColor=white)](https://skills.sh/jnnmia/project-architect)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/)
-[![Version](https://img.shields.io/badge/version-1.0.1-green.svg)](https://github.com/jnnmia/project-architect/releases)
-[![CI](https://img.shields.io/badge/build-passing-brightgreen.svg)](.github/workflows/ci.yml)
 
 Project Architect is an engineering governance and architecture scaffolding tool designed for AI-assisted software development. It guides technology stack selection through quantified decision trees, establishes non-negotiable project ground rules as hard constraints, and synchronizes rules across Cursor, Claude Code, GitHub Copilot, and Gemini CLI using non-invasive boundary markers.
 
@@ -290,7 +288,7 @@ pytest -v
 
 ## Contributing
 
-Issues and Pull Requests are welcome. Before contributing, please review [CONTRIBUTING.md](CONTRIBUTING.md):
+Issues and Merge Requests are welcome. Before contributing, please review the development baseline:
 - Strictly maintain zero external runtime dependencies (Python standard library only).
 - Strictly adhere to the zero-emoji policy.
 - Follow the concise commit message guidelines.
@@ -304,9 +302,3 @@ Issues and Pull Requests are welcome. Before contributing, please review [CONTRI
 |---|---|---|
 | **v1.0.1** | 2026-09-15 | Refined wording in core descriptions and templates to eliminate AI buzzwords, streamlined rule injection prompts, and updated verification checklists. |
 | **v1.0.0** | 2026-09-15 | Baseline release. Features five-stage architectural workflow, ground rules scaffolding, multi-agent marker injection, automated test suite, open-source documentation, and working CLI example. |
-
----
-
-## License
-
-This project is licensed under the [MIT License](LICENSE).

@@ -12,7 +12,9 @@ metadata:
     - tech-stack
     - ground-rules
     - checkpoints
+license: MIT
 ---
+
 
 # Project Architect (项目架构与规则搭建师)
 
