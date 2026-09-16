@@ -1,6 +1,8 @@
 # Project Architect
 
-[English](./README.en.md) | [简体中文](./README.md)
+[![skills.sh](https://skills.sh/b/jnnmia/project-architect)](https://skills.sh/jnnmia/project-architect) [![Version](https://img.shields.io/badge/version-v1.0.1-blue.svg)](https://github.com/jnnmia/project-architect/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+
+English | [简体中文](./README.zh-CN.md)
 
 Project Architect is an engineering governance and architecture scaffolding tool designed for AI-assisted software development. It guides technology stack selection through quantified decision trees, establishes non-negotiable project ground rules as hard constraints, and synchronizes rules across Cursor, Claude Code, GitHub Copilot, and Gemini CLI using non-invasive boundary markers.
 

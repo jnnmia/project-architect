@@ -1,8 +1,4 @@
 # Example: Minimal CLI (AudioClip)
-[![skills.sh](https://skills.sh/b/jnnmia/project-architect)](https://skills.sh/jnnmia/project-architect)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![CI](https://github.com/jnnmia/project-architect/actions/workflows/ci.yml/badge.svg)](https://github.com/jnnmia/project-architect/actions)
-
 
 This directory showcases an actual project initialized and governed by `project-architect`.
 
