@@ -15,7 +15,7 @@
 - **目标运行平台**: [如 Windows / Linux / macOS / 浏览器环境]
 - **非功能量化指标**: [如 进程内存 < 50MB, 冷启动 < 100ms, P95 响应 < 200ms, 离线可用]
 
-## 3. 宪法符合性审查门禁 (Constitution Check - HARD GATE)
+## 3. 核心规则自检 (Rules Check)
 
 > [!IMPORTANT]
 > 必须在详细设计前完成初审，并在数据模型与接口设计完成后终审。每项原则必须提供设计凭证（Evidence）；若存在违背必须填写豁免理由（Justification）。

@@ -1,6 +1,6 @@
 # audioclip - Agent Governance
 
-> 通用工程宪法与不可协商门禁定义于 [.specify/memory/constitution.md](./.specify/memory/constitution.md)。
+> 项目核心工程规范与底线规则定义于 [.specify/memory/constitution.md](./.specify/memory/constitution.md)。
 
 
 <!-- RULES START -->
