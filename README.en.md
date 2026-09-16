@@ -172,18 +172,20 @@ After injection, user configurations are fully preserved, and project rules are 
 
 <!-- RULES START -->
 ## Project Governance & Principles (Automated)
-Constitutional Single Source of Truth: `.specify/memory/constitution.md`
-Binding Architectural & Quality Invariants:
-### I. Static Compilation
+Rules Source of Truth: `.specify/memory/constitution.md`
+
+### Core Architectural & Quality Invariants:
+#### 1. Static Compilation
 - Core logic MUST compile into a single static binary with zero dynamic C-runtime dependencies.
-### II. Layer Decoupling
+#### 2. Layer Decoupling
 - Parser and Renderer modules MUST maintain strict interface-level isolation.
-### III. Structured Errors
+#### 3. Structured Errors
 - File I/O errors MUST return line-numbered structured diagnostics. Panic calls are forbidden.
 
-Hard Execution Gates:
-1. Every proposed plan MUST pass the Constitution Check gate with Evidence.
-2. Automated test suite and scope guards are non-negotiable hard gates.
+### Engineering Checkpoints:
+1. Verify proposed plans against core project rules.
+2. Maintain automated test coverage for critical business logic.
+3. Keep rule updates within boundary markers without overwriting custom configurations.
 <!-- RULES END -->
 ```
 

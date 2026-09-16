@@ -172,18 +172,20 @@ Project Architect 支持两种使用模式：你可以把它当作 AI 助手的�
 
 <!-- RULES START -->
 ## Project Governance & Principles (Automated)
-Constitutional Single Source of Truth: `.specify/memory/constitution.md`
-Binding Architectural & Quality Invariants:
-### I. 静态编译
+Rules Source of Truth: `.specify/memory/constitution.md`
+
+### Core Architectural & Quality Invariants:
+#### 1. 静态编译
 - 核心逻辑 MUST 编译为零动态依赖的单个静态二进制文件。
-### II. 分层单向解耦
+#### 2. 分层单向解耦
 - Parser 解析层与 Renderer 渲染层 MUST 保持接口级隔离。
-### III. 错误结构化
+#### 3. 错误结构化
 - 转换失败 MUST 返回包含源文件行号的结构化错误，禁止 panic。
 
-Hard Execution Gates:
-1. Every proposed plan MUST pass the Constitution Check gate with Evidence.
-2. Automated test suite and scope guards are non-negotiable hard gates.
+### Engineering Checkpoints:
+1. Verify proposed plans against core project rules.
+2. Maintain automated test coverage for critical business logic.
+3. Keep rule updates within boundary markers without overwriting custom configurations.
 <!-- RULES END -->
 ```
 

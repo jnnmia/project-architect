@@ -16,12 +16,12 @@
 ## 2. 核心原则三段式结构
 
 每条原则建议包含：
-1. **标识与名称**：明确标号（如 `I. 架构分离与单一职责`）。
+1. **标识与名称**：明确标号（如 `1. 架构分离与单一职责`）。
 2. **规则清单**：2~4 条具体的 MUST / MUST NOT 声明。
 3. **制定理由 (Rationale)**：说明为什么立这条规则，避免后续改动时无谓偏离。
 
 ```markdown
-### I. 依赖控制与离线可用 (Dependency Discipline)
+### 1. 依赖控制与离线可用 (Dependency Discipline)
 - 新增第三方依赖 MUST 给出明确理由，优先使用标准库或既有依赖。
 - 核心算法与工具逻辑 MUST 保证离线可执行，不引入不必要的外网依赖。
 
@@ -50,10 +50,10 @@ Version change: 1.0.0 -> 1.1.0
 Bump rationale: 增加跨平台环境兼容性约束。
 
 Principles modified:
-  - III. 依赖与资源节约: 补充文件描述符及时释放要求
+  - 3. 依赖与资源节约: 补充文件描述符及时释放要求
 
 Principles added:
-  - IV. 安全防护与环境兼容
+  - 4. 安全防护与环境兼容
 
 Templates reviewed for alignment:
   [x] plan-template.md: 检查项已对齐
