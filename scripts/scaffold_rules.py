@@ -3,18 +3,70 @@
 
 Pure Python 3 standard library implementation for bootstrapping project rules,
 managing the project constitution, and injecting rules into multi-agent context files.
+
+Exit codes:
+    0  Success.
+    1  Rule-level failure: validation errors, no principles extracted under
+       --strict, or an agent key / target that could not be honoured.
+    2  I/O failure: unreadable constitution, missing asset template, or a file
+       that is not valid UTF-8.
 """
 
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import sys
 from pathlib import Path
 
 DEFAULT_START_MARKER = "<!-- RULES START -->"
 DEFAULT_END_MARKER = "<!-- RULES END -->"
+
+
+class RuleIOError(Exception):
+    """Raised when a context file cannot be read or written as UTF-8 text."""
+
+
+def normalise_newlines(text: str) -> str:
+    """Collapse CRLF and lone CR into LF so output is platform-independent."""
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def read_text(source: Path | str) -> str:
+    """Read a file as UTF-8 text, stripping any BOM, with LF-only newlines.
+
+    Decoding is strict: a file that is not valid UTF-8 (for example a
+    CP936-encoded file saved by a legacy Windows editor) raises RuleIOError
+    instead of a bare UnicodeDecodeError traceback.
+    """
+    path = Path(source)
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise RuleIOError(f"Cannot read {path}: {exc}") from exc
+
+    try:
+        # utf-8-sig transparently drops a leading BOM and is a no-op without one.
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise RuleIOError(
+            f"{path} is not valid UTF-8 (offending byte at offset {exc.start}). "
+            "Re-save the file as UTF-8 and retry."
+        ) from exc
+
+    return normalise_newlines(text)
+
+
+def write_text(destination: Path, text: str) -> None:
+    """Write UTF-8 text with explicit LF newlines, never platform-native ones.
+
+    Passing newline="\\n" is what keeps Windows output byte-identical to Linux
+    output; without it Python rewrites every \\n as \\r\\n on Windows.
+    """
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with open(destination, "w", encoding="utf-8", newline="\n") as f:
+        f.write(normalise_newlines(text))
+
 
 AGENT_TARGET_MAP: dict[str, str] = {
     "agents": "AGENTS.md",
@@ -73,12 +125,10 @@ def _upsert_marker_section(
     is_mdc: bool = False,
 ) -> None:
     """Insert or replace the content between markers with single-sided recovery."""
-    file_path.parent.mkdir(parents=True, exist_ok=True)
     block = f"{start_marker}\n{section_content.strip()}\n{end_marker}\n"
 
     if file_path.exists():
-        with open(file_path, "r", encoding="utf-8") as f:
-            content = f.read()
+        content = read_text(file_path)
 
         s = content.find(start_marker)
         e = content.find(end_marker, s if s != -1 else 0)
@@ -109,22 +159,31 @@ def _upsert_marker_section(
     else:
         new_content = block
 
-    new_content = new_content.replace("\r\n", "\n")
     if is_mdc:
         new_content = _ensure_mdc_frontmatter(new_content)
 
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.write(new_content)
+    write_text(file_path, new_content)
 
 
 def _load_asset_template(template_name: str) -> str:
-    """Load template from skill asset directory."""
+    """Load a template from the sibling assets/templates directory.
+
+    Templates are resolved relative to this script, which works for every
+    supported layout: the development checkout, an `npx skills` install, and a
+    skillhub install (e.g. skills/project-architect__skillhub). A source tree
+    that is missing assets/ is reported with actionable guidance rather than a
+    bare FileNotFoundError.
+    """
     script_dir = Path(__file__).resolve().parent
     template_path = script_dir.parent / "assets" / "templates" / template_name
-    if not template_path.exists():
-        raise FileNotFoundError(f"Template not found: {template_path}")
-    with open(template_path, "r", encoding="utf-8") as f:
-        return f.read()
+    if not template_path.is_file():
+        raise RuleIOError(
+            f"Template not found: {template_path}. "
+            "This tool must run from a skill directory that contains both "
+            "'scripts/' and 'assets/templates/'. If the skill was copied "
+            "partially, re-install it with 'npx skills add jnnmia/project-architect'."
+        )
+    return read_text(template_path)
 
 
 def cmd_init(args: argparse.Namespace) -> int:
@@ -145,8 +204,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         template = _load_asset_template("constitution-template.md")
         rendered = template.replace("[PROJECT_NAME]", project_name)
         rendered = rendered.replace("[PROJECT_PURPOSE_SUMMARY]", purpose)
-        with open(constitution_file, "w", encoding="utf-8") as f:
-            f.write(rendered)
+        write_text(constitution_file, rendered)
         print(f"[CREATED] Constitution initialized at: {constitution_file}")
 
     templates_dir = target_dir / "templates"
@@ -158,8 +216,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             print(f"[SKIP] Template already exists: {out_path}")
         else:
             content = _load_asset_template(tmpl)
-            with open(out_path, "w", encoding="utf-8") as f:
-                f.write(content)
+            write_text(out_path, content)
             print(f"[CREATED] Template copied to: {out_path}")
 
     # Ensure baseline AGENTS.md exists
@@ -169,8 +226,7 @@ def cmd_init(args: argparse.Namespace) -> int:
             f"# {project_name} - Agent Governance\n\n"
             "> 项目核心工程规范与底线规则定义于 [.specify/memory/constitution.md](./.specify/memory/constitution.md)。\n"
         )
-        with open(agents_file, "w", encoding="utf-8") as f:
-            f.write(baseline_agents)
+        write_text(agents_file, baseline_agents)
         print(f"[CREATED] Baseline AGENTS.md created at: {agents_file}")
 
     print("\n[SUCCESS] Project rule scaffolding complete.")
@@ -284,9 +340,7 @@ def cmd_inject(args: argparse.Namespace) -> int:
         print(f"[ERROR] Constitution file not found: {const_file}", file=sys.stderr)
         return 1
 
-    with open(const_file, "r", encoding="utf-8") as f:
-        content = f.read()
-
+    content = read_text(const_file)
     principles_data = extract_principles(content)
 
     summary_lines = [
@@ -322,11 +376,11 @@ def cmd_inject(args: argparse.Namespace) -> int:
     summary_content = "\n".join(summary_lines)
 
     selected_agents = [a.strip().lower() for a in args.agents.split(",") if a.strip()]
+    unknown_agents = [a for a in selected_agents if a not in AGENT_TARGET_MAP]
     injected_count = 0
 
     for agent in selected_agents:
         if agent not in AGENT_TARGET_MAP:
-            print(f"[WARN] Unknown agent key: '{agent}'. Supported: {', '.join(AGENT_TARGET_MAP.keys())}")
             continue
 
         rel_path = AGENT_TARGET_MAP[agent]
@@ -343,6 +397,28 @@ def cmd_inject(args: argparse.Namespace) -> int:
         print(f"[INJECTED] Updated agent context: {dest_file}")
         injected_count += 1
 
+    # A misspelled target used to be reported as a warning while the command
+    # still exited 0, so typos silently produced a partially-configured
+    # project. Any rejected key is an error signal to the caller.
+    for agent in unknown_agents:
+        print(
+            f"[ERROR] Unknown agent key: '{agent}'. "
+            f"Supported: {', '.join(AGENT_TARGET_MAP)}",
+            file=sys.stderr,
+        )
+
+    if injected_count == 0:
+        print("[ERROR] No agent context file was updated.", file=sys.stderr)
+        return 1
+
+    if unknown_agents:
+        print(
+            f"\n[FAIL] Injected rules into {injected_count} agent file(s), "
+            f"but {len(unknown_agents)} agent key(s) were rejected.",
+            file=sys.stderr,
+        )
+        return 1
+
     print(f"\n[SUCCESS] Successfully injected rules into {injected_count} agent file(s).")
     return 0
 
@@ -356,8 +432,7 @@ def cmd_validate(args: argparse.Namespace) -> int:
         print(f"[FAIL] Constitution file does not exist: {const_file}")
         return 1
 
-    with open(const_file, "r", encoding="utf-8") as f:
-        text = f.read()
+    text = read_text(const_file)
 
     errors: list[str] = []
 
@@ -439,12 +514,16 @@ def main(argv: list[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
 
-    if args.subcommand == "init":
-        return cmd_init(args)
-    elif args.subcommand == "inject":
-        return cmd_inject(args)
-    elif args.subcommand == "validate":
-        return cmd_validate(args)
+    try:
+        if args.subcommand == "init":
+            return cmd_init(args)
+        elif args.subcommand == "inject":
+            return cmd_inject(args)
+        elif args.subcommand == "validate":
+            return cmd_validate(args)
+    except RuleIOError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        return 2
     return 0
 
 

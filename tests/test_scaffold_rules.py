@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Unit test suite for Project Architect scaffolder and rule injector."""
 
-import os
+import contextlib
+import io
 import shutil
 import sys
 import tempfile
@@ -11,6 +12,8 @@ from pathlib import Path
 # Add scripts directory to path for direct import
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import scaffold_rules
+
+SKILL_ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestScaffoldRules(unittest.TestCase):
@@ -297,6 +300,168 @@ class TestScaffoldRules(unittest.TestCase):
         # With strict, fails with exit code 1
         exit_code_strict = scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "claude", "--strict"])
         self.assertEqual(exit_code_strict, 1)
+
+
+class QuietResult:
+    """Run a callable with stdout/stderr captured and report (exit_code, out, err)."""
+
+    @staticmethod
+    def run(func, *args, **kwargs):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = func(*args, **kwargs)
+        return code, out.getvalue(), err.getvalue()
+
+
+class TestDeterministicOutput(unittest.TestCase):
+    """Generated files must be byte-identical across platforms (UTF-8, LF only)."""
+
+    def setUp(self):
+        self.test_dir = Path(tempfile.mkdtemp(prefix="proj_arch_test_"))
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def _init_project(self):
+        scaffold_rules.main(["init", "--dir", str(self.test_dir), "--name", "demo", "--purpose", "p"])
+
+    def _inject(self, agents):
+        return scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", agents])
+
+    GENERATED = [
+        ".specify/memory/constitution.md",
+        "templates/plan-template.md",
+        "templates/spec-template.md",
+        "templates/tasks-template.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".cursor/rules/project-rules.mdc",
+    ]
+
+    def test_generated_files_contain_no_carriage_returns(self):
+        """Regression: Windows text-mode writes used to emit CRLF everywhere."""
+        self._init_project()
+        self._inject("agents,claude,cursor")
+
+        for rel in self.GENERATED:
+            with self.subTest(file=rel):
+                raw = (self.test_dir / rel).read_bytes()
+                self.assertNotIn(b"\r", raw, f"{rel} contains CR bytes; output is not LF-only")
+
+    def test_preexisting_crlf_content_is_normalised(self):
+        """A hand-edited CRLF context file is rewritten with LF, keeping user text."""
+        self._init_project()
+        self.test_dir.joinpath("CLAUDE.md").write_bytes(
+            "# User Notes\r\n- keep me\r\n".encode("utf-8")
+        )
+        code = self._inject("claude")
+        self.assertEqual(code, 0)
+
+        raw = (self.test_dir / "CLAUDE.md").read_bytes()
+        self.assertNotIn(b"\r", raw)
+        text = raw.decode("utf-8")
+        self.assertIn("# User Notes", text)
+        self.assertIn("- keep me", text)
+
+    def test_leading_bom_is_stripped(self):
+        """A BOM written by a Windows editor must not survive into generated output."""
+        self._init_project()
+        self.test_dir.joinpath("CLAUDE.md").write_bytes(
+            "\ufeff# User Notes\n".encode("utf-8")
+        )
+        code = self._inject("claude")
+        self.assertEqual(code, 0)
+
+        text = (self.test_dir / "CLAUDE.md").read_bytes().decode("utf-8")
+        self.assertNotIn("\ufeff", text)
+        self.assertTrue(text.startswith("# User Notes"))
+
+    def test_non_utf8_target_reports_exit_code_2(self):
+        """Legacy CP936 content yields a clean exit code, never a traceback."""
+        self._init_project()
+        self.test_dir.joinpath("CLAUDE.md").write_bytes("中文说明".encode("gbk"))
+
+        code, _out, err = QuietResult.run(
+            scaffold_rules.main, ["inject", "--dir", str(self.test_dir), "--agents", "claude"]
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("not valid UTF-8", err)
+
+    def test_missing_asset_template_reports_actionable_error(self):
+        """A partially copied skill must explain itself instead of raising FileNotFoundError."""
+        with self.assertRaises(scaffold_rules.RuleIOError) as ctx:
+            scaffold_rules._load_asset_template("does-not-exist.md")
+        self.assertIn("assets/templates", str(ctx.exception))
+        self.assertIn("skills add", str(ctx.exception))
+
+    def test_shared_helpers_round_trip(self):
+        """write_text/read_text normalise newlines and emit UTF-8 without a BOM."""
+        target = self.test_dir / "nested" / "deep" / "out.md"
+        scaffold_rules.write_text(target, "a\r\nb\rc\n")
+        raw = target.read_bytes()
+        self.assertEqual(raw, b"a\nb\nc\n")
+        self.assertEqual(scaffold_rules.read_text(target), "a\nb\nc\n")
+
+
+class TestAgentKeyValidation(unittest.TestCase):
+    """A rejected agent target must be an error signal, not a silent warning."""
+
+    def setUp(self):
+        self.test_dir = Path(tempfile.mkdtemp(prefix="proj_arch_test_"))
+        scaffold_rules.main(["init", "--dir", str(self.test_dir), "--name", "demo", "--purpose", "p"])
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_typo_in_agent_list_fails_but_keeps_valid_targets(self):
+        code, _out, err = QuietResult.run(
+            scaffold_rules.main, ["inject", "--dir", str(self.test_dir), "--agents", "claude,curor"]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("Unknown agent key: 'curor'", err)
+        # The valid target is still written, so a single typo does not lose work.
+        self.assertTrue((self.test_dir / "CLAUDE.md").exists())
+        self.assertFalse((self.test_dir / ".cursor" / "rules" / "project-rules.mdc").exists())
+
+    def test_all_unknown_agent_keys_fail_and_write_nothing(self):
+        code, _out, err = QuietResult.run(
+            scaffold_rules.main, ["inject", "--dir", str(self.test_dir), "--agents", "bogus"]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("No agent context file was updated", err)
+        self.assertFalse((self.test_dir / "CLAUDE.md").exists())
+
+    def test_empty_agent_list_fails(self):
+        code, _out, err = QuietResult.run(
+            scaffold_rules.main, ["inject", "--dir", str(self.test_dir), "--agents", "  ,  "]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("No agent context file was updated", err)
+
+
+class TestDocumentationContract(unittest.TestCase):
+    """Guard the class of bug where docs drift away from the on-disk layout."""
+
+    def test_skill_md_has_no_collection_layout_path(self):
+        """SKILL.md must not hardcode an install prefix such as skills/<name>/scripts/."""
+        text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertNotIn("skills/project-architect/scripts/", text)
+
+    def test_skill_md_documented_script_path_exists(self):
+        """Every scripts/scaffold_rules.py reference must resolve from the skill root."""
+        text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("scripts/scaffold_rules.py", text)
+        self.assertTrue((SKILL_ROOT / "scripts" / "scaffold_rules.py").is_file())
+
+    def test_skill_md_documents_the_exit_code_contract(self):
+        text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("退出码契约", text)
+
+    def test_shipped_templates_do_not_reference_the_skill_script(self):
+        """Templates are copied into user projects, where this script does not exist."""
+        for template in sorted((SKILL_ROOT / "assets" / "templates").glob("*.md")):
+            with self.subTest(template=template.name):
+                self.assertNotIn("scaffold_rules.py", template.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

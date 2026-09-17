@@ -41,4 +41,4 @@
   - *验证命令*: `python -m pytest --durations=10`
 - [ ] `TASK-006` [P] [RULE-04] 跨平台路径与安全扫描，更新项目文档
   - *目标文件*: `README.md`, `specs/`
-  - *验证命令*: `python scripts/scaffold_rules.py validate`
+  - *验证命令*: `[SECURITY_SCAN_CMD]`（替换为本工程实际的依赖与密钥扫描命令）

@@ -53,20 +53,33 @@ license: MIT
 ### 阶段 4：规则脚手架与上下文注入 (Scaffolding & Context Injection)
 > 参考文档: `references/agent-rules-mapping.md`
 
-执行确定性脚本完成模板建立与多 Agent 规则注入：
+执行确定性脚本完成模板建立与多 Agent 规则注入。
+
+> **执行位置**：以下命令一律在**本 skill 根目录**（即同时含 `scripts/` 与 `assets/templates/` 的那一层）下运行。脚本以自身位置定位模板资源，`--dir` 才指向目标工程；写死任何安装前缀（如 `skills/project-architect/...`）在不同安装方式下都会失效。
+
 ```bash
 # 1. 初始化底线规则文件与需求规划模板
-python skills/project-architect/scripts/scaffold_rules.py init \
+python scripts/scaffold_rules.py init \
   --dir <项目路径> --name "<项目名>" --purpose "<定位陈述>"
 
 # 2. 检查规则文本合规度（占位符替换、MUST约束存在性、版本标注）
-python skills/project-architect/scripts/scaffold_rules.py validate \
+python scripts/scaffold_rules.py validate \
   --dir <项目路径>
 
 # 3. 将规则以边界标记注入目标 AI 工具上下文
-python skills/project-architect/scripts/scaffold_rules.py inject \
-  --dir <项目路径> --agents "agents,claude,cursor,copilot,gemini"
+python scripts/scaffold_rules.py inject \
+  --dir <项目路径> --agents "agents,claude,cursor,copilot,gemini" --strict
 ```
+
+**退出码契约**（脚本化调用 MUST 判退出码，禁止只匹配输出文本）：
+
+| 码 | 含义 |
+|---|---|
+| `0` | 成功 |
+| `1` | 规则层失败：校验不通过、`--strict` 下未提取到任何原则、`--agents` 中出现无法识别的键 |
+| `2` | I/O 失败：宪法不可读、模板资源缺失、目标文件非 UTF-8 |
+
+所有生成文件统一为 **UTF-8 无 BOM + LF 换行**，同一输入在 Windows 与 Linux 上产出字节一致。
 
 ### 阶段 5：规则交接与开发推进 (Workflow & Verification Handoff)
 向开发者交付已生成的规则文件结构，后续开发按标准流程推进：
