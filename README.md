@@ -197,6 +197,15 @@ Suitable for CI/CD pipelines, headless environments, or developers who prefer co
 - Python 3.8+ (standard library only; zero external pip dependencies).
 - Git.
 
+> **Run every command from the skill root.** `scaffold_rules.py` locates its templates
+> relative to its own location, so execute it from the directory that holds both
+> `scripts/` and `assets/templates/`. Only `--dir` points at your target project.
+
+> **Not a pip package.** This repository is distributed as an Agent Skill, not as an
+> installable Python distribution. Templates live in `assets/templates/` next to the
+> script, so `pip install` / `pipx install` are not supported — clone the repository
+> (or install it as a skill) and invoke the script in place.
+
 #### 3-Step Pipeline
 
 ```bash
@@ -218,6 +227,19 @@ python scripts/scaffold_rules.py inject \
 python scripts/scaffold_rules.py validate \
   --dir /path/to/project
 ```
+
+#### Exit Codes
+
+Scripted callers must branch on the exit code rather than matching output text.
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | Rule-level failure: validation errors, no principles extracted under `--strict`, or an unrecognised `--agents` key |
+| `2` | I/O failure: unreadable constitution, missing asset template, or a target file that is not valid UTF-8 |
+
+All generated files are written as **UTF-8 without BOM, LF line endings**, so the same
+input produces byte-identical output on Windows and Linux.
 
 #### Terminal Execution Sample Output
 
@@ -251,7 +273,7 @@ project-architect/
 ├── README.zh-CN.md                   # Chinese documentation
 ├── LICENSE                           # MIT License
 ├── CONTRIBUTING.md                   # Collaboration and contributing guidelines
-├── pyproject.toml                    # Package configuration and pytest parameters
+├── pyproject.toml                    # Project metadata and pytest parameters (not a pip package)
 ├── .gitignore                        # Git ignore patterns
 ├── .github/workflows/ci.yml          # GitHub Actions CI workflow
 ├── scripts/

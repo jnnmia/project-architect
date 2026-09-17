@@ -481,5 +481,24 @@ class TestDocumentationContract(unittest.TestCase):
                     )
 
 
+    def test_pyproject_declares_no_console_script(self):
+        """Regression: a 'project-architect' entry point was declared but could never install."""
+        text = (SKILL_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        self.assertNotIn("[project.scripts]", text)
+        self.assertNotIn("scripts.scaffold_rules:main", text)
+
+    def test_declared_version_matches_skill_metadata(self):
+        """A release must bump the version in pyproject.toml and SKILL.md together."""
+        pyproject = (SKILL_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        skill_md = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+        pyproject_version = re.search(r'(?m)^version\s*=\s*"([^"]+)"', pyproject)
+        skill_version = re.search(r'(?m)^\s*version\s*:\s*"([^"]+)"', skill_md)
+        self.assertIsNotNone(pyproject_version, "no version found in pyproject.toml")
+        self.assertIsNotNone(skill_version, "no version found in SKILL.md metadata")
+
+        self.assertEqual(pyproject_version.group(1), skill_version.group(1))
+
+
 if __name__ == "__main__":
     unittest.main()

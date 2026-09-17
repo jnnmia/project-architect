@@ -197,6 +197,13 @@ Rules Source of Truth: `.specify/memory/constitution.md`
 - Python 3.8+（仅需 Python 标准库，零第三方 pip 依赖）。
 - Git。
 
+> **命令一律在 skill 根目录执行。** `scaffold_rules.py` 依据自身位置定位模板资源，
+> 请在同时含 `scripts/` 与 `assets/templates/` 的那一层运行；只有 `--dir` 指向目标工程。
+
+> **本项目不是 pip 包。** 本仓库以 Agent Skill 形态分发，而非可安装的 Python 发行包。
+> 模板资源与脚本同级放在 `assets/templates/`，因此不支持 `pip install` / `pipx install`
+> ——请克隆仓库（或以 skill 方式安装）后原地调用脚本。
+
 #### 3 步终端流水线
 
 ```bash
@@ -218,6 +225,18 @@ python scripts/scaffold_rules.py inject \
 python scripts/scaffold_rules.py validate \
   --dir /path/to/project
 ```
+
+#### 退出码
+
+脚本化调用 MUST 依据退出码分支，禁止只匹配输出文本。
+
+| 码 | 含义 |
+|---|---|
+| `0` | 成功 |
+| `1` | 规则层失败：校验不通过、`--strict` 下未提取到任何原则、`--agents` 中出现无法识别的键 |
+| `2` | I/O 失败：宪法不可读、模板资源缺失、目标文件非 UTF-8 |
+
+所有生成文件统一为 **UTF-8 无 BOM + LF 换行**，同一输入在 Windows 与 Linux 上产出字节一致。
 
 #### CLI 实际执行输出示范
 
@@ -251,7 +270,7 @@ project-architect/
 ├── README.zh-CN.md                   # 简体中文使用说明
 ├── LICENSE                           # MIT 开源许可证
 ├── CONTRIBUTING.md                   # 协作规范与贡献流程
-├── pyproject.toml                    # 项目配置文件与 pytest 参数
+├── pyproject.toml                    # 项目元数据与 pytest 参数（非 pip 安装包）
 ├── .gitignore                        # 忽略规则
 ├── .github/workflows/ci.yml          # GitHub Actions 自动化测试流水线
 ├── scripts/

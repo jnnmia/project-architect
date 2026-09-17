@@ -1,6 +1,18 @@
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+# Metadata only. This repository is distributed as an Agent Skill, not as an
+# installable Python distribution:
+#
+#   * There is no importable package here. `scripts/` is a plain directory, not a
+#     package, and `scripts/scaffold_rules.py` is invoked in place.
+#   * The runtime resolves its templates from the sibling `assets/templates/`
+#     directory, so a wheel-installed copy could not run `init` even if it built.
+#
+# Earlier revisions declared a `project-architect` console script here, but
+# `pip install .` never worked (setuptools cannot infer packages from this flat
+# layout) and could not have worked. Install the skill instead:
+#
+#   npx skills add jnnmia/project-architect
+#
+# The `[project]` table below is kept for tooling that reads project metadata.
 
 [project]
 name = "project-architect"
@@ -24,9 +36,6 @@ classifiers = [
     "Topic :: Software Development :: Build Tools",
     "Topic :: Software Development :: Code Generators",
 ]
-
-[project.scripts]
-project-architect = "scripts.scaffold_rules:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
