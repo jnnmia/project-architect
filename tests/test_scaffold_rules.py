@@ -82,7 +82,9 @@ class TestScaffoldRules(unittest.TestCase):
         self.assertTrue(updated_claude.startswith("# User Custom Commands"))
         self.assertIn(scaffold_rules.DEFAULT_START_MARKER, updated_claude)
         self.assertIn(scaffold_rules.DEFAULT_END_MARKER, updated_claude)
-        self.assertIn("Project Governance & Principles (Automated)", updated_claude)
+        # The default constitution template is Chinese, so the generated block
+        # must frame itself in Chinese rather than in English boilerplate.
+        self.assertIn("## 项目治理与核心原则（自动生成）", updated_claude)
 
         # Ensure Cursor MDC has frontmatter
         cursor_file = self.test_dir / ".cursor" / "rules" / "project-rules.mdc"
@@ -520,7 +522,10 @@ class TestDetectCommand(unittest.TestCase):
             scaffold_rules.main, ["detect", "--dir", str(self.test_dir)]
         )
         self.assertEqual(code, 1)
-        self.assertIn("Ask the user which tools they use", err)
+        # Not [FAIL]: a brand-new project is a normal outcome, not a broken one.
+        self.assertNotIn("[FAIL]", err)
+        self.assertIn("[NOTICE]", err)
+        self.assertIn("ask the user which tools they use", err)
         for agent in scaffold_rules.AGENT_TARGET_MAP:
             self.assertIn(agent, out)
 
@@ -773,7 +778,8 @@ class TestAdversarialHardening(unittest.TestCase):
             ["inject", "--dir", str(self.test_dir), "--agents", "claude,claude,CLAUDE"],
         )
         self.assertEqual(code, 0)
-        self.assertEqual(out.count("[INJECTED]"), 1)
+        written = out.count("[CREATED]") + out.count("[UPDATED]")
+        self.assertEqual(written, 1)
         claude = (self.test_dir / "CLAUDE.md").read_text(encoding="utf-8")
         self.assertEqual(claude.count(scaffold_rules.DEFAULT_START_MARKER), 1)
 
@@ -824,6 +830,151 @@ class TestAdversarialHardening(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         self.assertIn("Target directory did not exist", out)
+
+
+class TestUsabilityAndPreview(unittest.TestCase):
+    """Usability findings: preview, honest verbs, language, actionable errors."""
+
+    def setUp(self):
+        self.test_dir = Path(tempfile.mkdtemp(prefix="proj_arch_test_"))
+        scaffold_rules.main(["init", "--dir", str(self.test_dir), "--name", "demo", "--purpose", "p"])
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    # -- dry run -----------------------------------------------------------
+    def test_dry_run_writes_nothing(self):
+        """Regression: inject rewrote files with no way to preview the change."""
+        code, out, _err = QuietResult.run(
+            scaffold_rules.main,
+            ["inject", "--dir", str(self.test_dir), "--agents", "claude,cursor", "--dry-run"],
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("[DRY-RUN]", out)
+        self.assertFalse((self.test_dir / "CLAUDE.md").exists())
+        self.assertFalse((self.test_dir / ".cursor").exists())
+
+    def test_dry_run_reports_size_delta(self):
+        (self.test_dir / "CLAUDE.md").write_text("# custom header\n", encoding="utf-8")
+        code, out, _err = QuietResult.run(
+            scaffold_rules.main,
+            ["inject", "--dir", str(self.test_dir), "--agents", "claude", "--dry-run"],
+        )
+        self.assertEqual(code, 0)
+        line = [l for l in out.splitlines() if "CLAUDE.md" in l and "bytes" in l]
+        self.assertTrue(line, f"no size delta reported: {out}")
+        self.assertIn("->", line[0])
+        # Existing file is untouched, so the delta must be positive.
+        self.assertIn("+", line[0])
+
+    def test_dry_run_mentions_how_to_roll_back(self):
+        _code, out, _err = QuietResult.run(
+            scaffold_rules.main,
+            ["inject", "--dir", str(self.test_dir), "--agents", "claude", "--dry-run"],
+        )
+        self.assertIn("Nothing was written", out)
+        self.assertIn("roll back", out)
+
+    def test_preview_and_write_share_one_code_path(self):
+        """A preview that disagrees with the real run is worse than no preview."""
+        previewed = self.test_dir / "previewed"
+        direct = self.test_dir / "direct"
+        for d in (previewed, direct):
+            scaffold_rules.main(["init", "--dir", str(d), "--name", "demo", "--purpose", "p"])
+
+        QuietResult.run(
+            scaffold_rules.main,
+            ["inject", "--dir", str(previewed), "--agents", "agents,claude,cursor", "--dry-run"],
+        )
+        scaffold_rules.main(["inject", "--dir", str(previewed), "--agents", "agents,claude,cursor"])
+        scaffold_rules.main(["inject", "--dir", str(direct), "--agents", "agents,claude,cursor"])
+
+        for rel in ["AGENTS.md", "CLAUDE.md", ".cursor/rules/project-rules.mdc"]:
+            with self.subTest(file=rel):
+                self.assertEqual(
+                    (previewed / rel).read_bytes(),
+                    (direct / rel).read_bytes(),
+                )
+
+    # -- honest verbs --------------------------------------------------------
+    def test_created_and_updated_are_distinguished(self):
+        """Regression: a re-run that updated an existing file still said INJECTED."""
+        _code, first, _err = QuietResult.run(
+            scaffold_rules.main, ["inject", "--dir", str(self.test_dir), "--agents", "claude"]
+        )
+        _code, second, _err = QuietResult.run(
+            scaffold_rules.main, ["inject", "--dir", str(self.test_dir), "--agents", "claude"]
+        )
+        self.assertIn("[CREATED]", first)
+        self.assertIn("[UPDATED]", second)
+        self.assertNotIn("[CREATED]", second)
+
+    # -- language ------------------------------------------------------------
+    def test_summary_language_follows_the_constitution(self):
+        const = self.test_dir / ".specify" / "memory" / "constitution.md"
+        const.write_text(
+            "# Constitution\n\n## Core Principles\n\n### Layering\n"
+            "- Core logic MUST stay isolated from transports.\n",
+            encoding="utf-8",
+        )
+        scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "claude"])
+        claude = (self.test_dir / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn("## Project Governance & Principles (Automated)", claude)
+        self.assertNotIn("项目治理与核心原则", claude)
+
+    def test_chinese_constitution_gets_chinese_labels(self):
+        const = self.test_dir / ".specify" / "memory" / "constitution.md"
+        const.write_text(
+            "# 宪法\n\n## 核心原则\n\n### 分层隔离\n- 核心逻辑 MUST 与传输层解耦。\n",
+            encoding="utf-8",
+        )
+        scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "claude"])
+        claude = (self.test_dir / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn("## 项目治理与核心原则（自动生成）", claude)
+        self.assertIn("### 工程卡点：", claude)
+        self.assertNotIn("Engineering Checkpoints", claude)
+
+    # -- error messages ------------------------------------------------------
+    def test_directory_target_is_not_reported_as_permission_denied(self):
+        """Windows reports opening a directory as [Errno 13], which misleads."""
+        (self.test_dir / "CLAUDE.md").mkdir()
+        code, _out, err = QuietResult.run(
+            scaffold_rules.main, ["inject", "--dir", str(self.test_dir), "--agents", "claude"]
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("it is a directory", err)
+        self.assertNotIn("Permission denied", err)
+
+    # -- detect hands over the next step -------------------------------------
+    def test_detect_shows_a_copyable_next_command(self):
+        (self.test_dir / ".cursor").mkdir()
+        code, out, _err = QuietResult.run(
+            scaffold_rules.main, ["detect", "--dir", str(self.test_dir)]
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("scaffold_rules.py inject", out)
+        self.assertIn("--strict", out)
+        self.assertIn("--dry-run", out)
+
+    # -- performance guard ----------------------------------------------------
+    def test_target_dir_is_resolved_once_not_per_target(self):
+        """On a network share every resolve() is several round-trips."""
+        calls = {"n": 0}
+        original = Path.resolve
+
+        def counted(self, *a, **kw):
+            calls["n"] += 1
+            return original(self, *a, **kw)
+
+        Path.resolve = counted
+        try:
+            scaffold_rules.main(
+                ["inject", "--dir", str(self.test_dir), "--agents", ",".join(scaffold_rules.AGENT_TARGET_MAP)]
+            )
+        finally:
+            Path.resolve = original
+        # One resolve for the target root plus one containment check.
+        self.assertLessEqual(calls["n"], 3, f"resolve() called {calls['n']} times")
 
 
 if __name__ == "__main__":

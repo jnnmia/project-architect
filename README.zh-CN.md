@@ -230,7 +230,7 @@ Rules Source of Truth: `.specify/memory/constitution.md`
 > 模板资源与脚本同级放在 `assets/templates/`，因此不支持 `pip install` / `pipx install`
 > ——请克隆仓库（或以 skill 方式安装）后原地调用脚本。
 
-#### 4 步终端流水线
+#### 5 步终端流水线
 
 ```bash
 # 步骤 1：探测工程里已有哪些 AI 工具的痕迹 (detect，只读)
@@ -245,18 +245,30 @@ python scripts/scaffold_rules.py init \
   --name "my-service" \
   --purpose "高并发日志解析服务"
 
-# 步骤 3：增量注入规则到各 AI 编程工具上下文 (inject)
-# 自动解析规则中的 MUST 约束，生成摘要并无侵入注入到指定工具文件。
+# 步骤 3：合规检查 (validate)
+# 校验占位符是否全替换、是否包含 MUST 强制约束、是否有 Rationale 论证。
+# 放在首次注入之前，避免把一份没过检的宪法铺到每个上下文文件里。
+python scripts/scaffold_rules.py validate \
+  --dir /path/to/project
+
+# 步骤 4：先预览注入范围 (inject --dry-run)
+# 列出每个目标文件是新建还是更新、以及字节增量；不写任何文件。
 # --agents 必填：只填用户确认过的工具，严禁填成全部支持项。
 python scripts/scaffold_rules.py inject \
   --dir /path/to/project \
-  --agents "agents,claude,cursor"
+  --agents "agents,claude,cursor" \
+  --strict --dry-run
 
-# 步骤 4：合规检查 (validate)
-# 校验占位符是否全替换、是否包含 MUST 强制约束、是否有 Rationale 论证
-python scripts/scaffold_rules.py validate \
-  --dir /path/to/project
+# 步骤 5：预览无误后真正落盘
+python scripts/scaffold_rules.py inject \
+  --dir /path/to/project \
+  --agents "agents,claude,cursor" \
+  --strict
 ```
+
+> `--dry-run` 一个字节都不写：它只报告每个目标是新建还是更新，以及字节增量。
+> 预览与写入走同一段代码，因此预览不会与实际结果不一致。
+> 已落盘的变更要回滚：删掉 `<!-- RULES START -->` 与 `<!-- RULES END -->` 之间的整段即可。
 
 #### 退出码
 

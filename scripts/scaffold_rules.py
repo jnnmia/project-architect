@@ -45,6 +45,10 @@ def read_text(source: Path | str) -> str:
     try:
         raw = path.read_bytes()
     except OSError as exc:
+        # Windows reports opening a directory as [Errno 13] Permission denied,
+        # which sends people hunting for ACLs instead of noticing the typo.
+        if isinstance(exc, IsADirectoryError) or path.is_dir():
+            raise RuleIOError(f"Cannot read {path}: it is a directory, not a file.") from None
         raise RuleIOError(f"Cannot read {path}: {exc}") from exc
 
     try:
@@ -72,11 +76,17 @@ def write_text(destination: Path, text: str) -> None:
     except OSError as exc:
         # Read-only files, full disks and permissions must surface as a clean
         # error code, not an OSError traceback past the exit-code contract.
+        if isinstance(exc, IsADirectoryError) or destination.is_dir():
+            raise RuleIOError(f"Cannot write {destination}: it is a directory.") from exc
         raise RuleIOError(f"Cannot write {destination}: {exc}") from exc
 
 
 def resolve_within(root: Path, relative: str, flag: str) -> Path:
     """Resolve a project-relative path, refusing anything that escapes root.
+
+    `root` must already be resolved by the caller: on a network share every
+    resolve() costs several round-trips, and re-resolving a path we just
+    resolved is pure waste.
 
     The reference documentation promises that targets stay inside the project
     root; pathlib does not enforce that on its own. Joining with `/` silently
@@ -85,27 +95,26 @@ def resolve_within(root: Path, relative: str, flag: str) -> Path:
     injected rule summary.
     """
     candidate = Path(relative)
-    resolved_root = root.resolve()
 
     if candidate.is_absolute():
         raise RuleIOError(
-            f"{flag} must stay inside the project root ({resolved_root}), "
+            f"{flag} must stay inside the project root ({root}), "
             f"but '{relative}' is an absolute path."
         )
 
     parts = [p for p in candidate.parts if p not in ("", ".")]
     if ".." in parts:
         raise RuleIOError(
-            f"{flag} must stay inside the project root ({resolved_root}), "
+            f"{flag} must stay inside the project root ({root}), "
             f"but '{relative}' climbs out of it."
         )
 
-    resolved = (resolved_root / Path(*parts)).resolve()
+    resolved = (root / Path(*parts)).resolve()
     try:
-        resolved.relative_to(resolved_root)
+        resolved.relative_to(root)
     except ValueError:
         raise RuleIOError(
-            f"{flag} resolves to {resolved}, outside the project root {resolved_root}."
+            f"{flag} resolves to {resolved}, outside the project root {root}."
         ) from None
     return resolved
 
@@ -173,15 +182,24 @@ def _ensure_mdc_frontmatter(content: str) -> str:
     return f"{leading}{opening}{fm_text}{closing}{sep}{rest}"
 
 
-def _upsert_marker_section(
+def _plan_marker_section(
     file_path: Path,
     start_marker: str,
     end_marker: str,
     section_content: str,
     is_mdc: bool = False,
-) -> None:
-    """Insert or replace the content between markers with single-sided recovery."""
+) -> tuple[str, str]:
+    """Compute (action, new_content) without touching the filesystem.
+
+    Splitting the plan from the write is what makes --dry-run honest: the
+    preview and the real write run through the exact same code path, so a
+    preview cannot disagree with what would have happened.
+
+    Returns action = "create" when the file does not exist yet, "update"
+    otherwise.
+    """
     block = f"{start_marker}\n{section_content.strip()}\n{end_marker}\n"
+    action = "update"
 
     if file_path.exists():
         content = read_text(file_path)
@@ -214,11 +232,27 @@ def _upsert_marker_section(
             new_content = content + sep + block
     else:
         new_content = block
+        action = "create"
 
     if is_mdc:
         new_content = _ensure_mdc_frontmatter(new_content)
 
+    return action, new_content
+
+
+def _upsert_marker_section(
+    file_path: Path,
+    start_marker: str,
+    end_marker: str,
+    section_content: str,
+    is_mdc: bool = False,
+) -> str:
+    """Insert or replace the content between markers. Returns the action taken."""
+    action, new_content = _plan_marker_section(
+        file_path, start_marker, end_marker, section_content, is_mdc
+    )
     write_text(file_path, new_content)
+    return action
 
 
 def _load_asset_template(template_name: str) -> str:
@@ -487,10 +521,14 @@ def cmd_detect(args: argparse.Namespace) -> int:
             print(f"  [no trace]  {agent:<9} (nothing on disk)")
 
     if not detected:
+        # Not a failure of the tool: a brand-new project legitimately has no
+        # traces. Calling it [FAIL] told people something was broken when the
+        # only correct action is to go and ask.
         print(
-            "\n[FAIL] No supported AI tool signature found. This project is either "
+            "\n[NOTICE] No supported AI tool signature found. This project is either "
             "brand new or uses tools this skill does not know about.\n"
-            "       Ask the user which tools they use - do NOT inject into everything.",
+            "         Nothing here to base a decision on - ask the user which tools "
+            "they use, and do NOT inject into everything.",
             file=sys.stderr,
         )
         return 1
@@ -502,7 +540,66 @@ def cmd_detect(args: argparse.Namespace) -> int:
         "Evidence only, not consent: confirm with the user which of these they actually\n"
         "use before injecting, and never add a tool they did not mention."
     )
+
+    # Hand the next command over instead of making people reconstruct it from
+    # the README. --agents still has to be edited down to the confirmed subset;
+    # that edit is the whole point of the confirm step.
+    print("\nNext step, once the user has confirmed the subset:")
+    print(f"  python scripts/scaffold_rules.py inject \\")
+    print(f"    --dir \"{target_dir}\" --agents \"{','.join(detected)}\" --strict")
+    print(
+        "  Add --dry-run first to preview the change without writing anything."
+    )
     return 0
+
+
+SUMMARY_LABELS: dict[str, dict[str, object]] = {
+    "en": {
+        "heading": "## Project Governance & Principles (Automated)",
+        "source": "Rules Source of Truth:",
+        "invariants": "### Core Architectural & Quality Invariants:",
+        "empty_rule": "- (Refer to constitution for detailed rules)",
+        "fallback": "- Refer to rules document for binding MUST/SHOULD principles.",
+        "checkpoints": "### Engineering Checkpoints:",
+        "checkpoint_items": [
+            "1. Verify proposed plans against core project rules.",
+            "2. Maintain automated test coverage for critical business logic.",
+            "3. Keep rule updates within boundary markers without overwriting custom configurations.",
+        ],
+    },
+    "zh": {
+        "heading": "## 项目治理与核心原则（自动生成）",
+        "source": "规则事实源：",
+        "invariants": "### 核心架构与质量不变量：",
+        "empty_rule": "- （详细规则见宪法原文）",
+        "fallback": "- 绑定性 MUST / SHOULD 原则见规则文档。",
+        "checkpoints": "### 工程卡点：",
+        "checkpoint_items": [
+            "1. 方案推进前 MUST 对照项目核心规则自检。",
+            "2. 核心业务逻辑 MUST 保持自动化测试覆盖。",
+            "3. 规则更新 MUST 只落在边界标记内，不得覆盖自定义配置。",
+        ],
+    },
+}
+
+
+def contains_cjk(text: str) -> bool:
+    return any("一" <= ch <= "鿿" for ch in text)
+
+
+def summary_language(principles_data: list[tuple[str, list[str]]], content: str) -> str:
+    """Match the generated block's language to the constitution's language.
+
+    The rules themselves come from the user's constitution and are copied
+    verbatim; only the surrounding labels are ours. Hardcoding English labels
+    left a Chinese project with an English-framed block inside its own
+    Chinese rules file.
+    """
+    if principles_data:
+        sample = " ".join(title + " " + " ".join(rules) for title, rules in principles_data)
+    else:
+        sample = content
+    return "zh" if contains_cjk(sample) else "en"
 
 
 def cmd_inject(args: argparse.Namespace) -> int:
@@ -517,11 +614,13 @@ def cmd_inject(args: argparse.Namespace) -> int:
     content = read_text(const_file)
     principles_data = extract_principles(content)
 
+    labels = SUMMARY_LABELS[summary_language(principles_data, content)]
+
     summary_lines = [
-        "## Project Governance & Principles (Automated)",
-        f"Rules Source of Truth: `{args.constitution_path}`",
+        str(labels["heading"]),
+        f"{labels['source']} `{args.constitution_path}`",
         "",
-        "### Core Architectural & Quality Invariants:",
+        str(labels["invariants"]),
     ]
 
     if principles_data:
@@ -530,22 +629,17 @@ def cmd_inject(args: argparse.Namespace) -> int:
             for r in rules:
                 summary_lines.append(f"- {r}")
             if not rules:
-                summary_lines.append("- (Refer to constitution for detailed rules)")
+                summary_lines.append(str(labels["empty_rule"]))
     else:
         warn_msg = f"[WARN] No principles extracted from {const_file}. Ensure principles are defined under '## Core Principles' with '### <Title>' headers."
         print(warn_msg, file=sys.stderr)
         if getattr(args, "strict", False):
             print(f"[FAIL] Injection aborted due to --strict flag: 0 principles extracted.", file=sys.stderr)
             return 1
-        summary_lines.append("- Refer to rules document for binding MUST/SHOULD principles.")
+        summary_lines.append(str(labels["fallback"]))
 
-    summary_lines.extend([
-        "",
-        "### Engineering Checkpoints:",
-        "1. Verify proposed plans against core project rules.",
-        "2. Maintain automated test coverage for critical business logic.",
-        "3. Keep rule updates within boundary markers without overwriting custom configurations.",
-    ])
+    summary_lines.extend(["", str(labels["checkpoints"])])
+    summary_lines.extend(str(item) for item in labels["checkpoint_items"])  # type: ignore[union-attr]
 
     summary_content = "\n".join(summary_lines)
 
@@ -563,14 +657,29 @@ def cmd_inject(args: argparse.Namespace) -> int:
         dest_file = target_dir / rel_path
         is_mdc = rel_path.endswith(".mdc")
 
-        _upsert_marker_section(
-            dest_file,
-            DEFAULT_START_MARKER,
-            DEFAULT_END_MARKER,
-            summary_content,
-            is_mdc=is_mdc,
-        )
-        print(f"[INJECTED] Updated agent context: {dest_file}")
+        if getattr(args, "dry_run", False):
+            action, planned = _plan_marker_section(
+                dest_file,
+                DEFAULT_START_MARKER,
+                DEFAULT_END_MARKER,
+                summary_content,
+                is_mdc,
+            )
+            before = dest_file.stat().st_size if dest_file.is_file() else 0
+            after = len(planned.encode("utf-8"))
+            print(
+                f"[DRY-RUN] would {action} {dest_file} "
+                f"({before} -> {after} bytes, {after - before:+d})"
+            )
+        else:
+            action = _upsert_marker_section(
+                dest_file,
+                DEFAULT_START_MARKER,
+                DEFAULT_END_MARKER,
+                summary_content,
+                is_mdc,
+            )
+            print(f"[{'CREATED' if action == 'create' else 'UPDATED'}] agent context: {dest_file}")
         injected_count += 1
 
     # A misspelled target used to be reported as a warning while the command
@@ -595,7 +704,17 @@ def cmd_inject(args: argparse.Namespace) -> int:
         )
         return 1
 
-    print(f"\n[SUCCESS] Successfully injected rules into {injected_count} agent file(s).")
+    if getattr(args, "dry_run", False):
+        # Saying "Successfully injected" while nothing was written is a lie the
+        # user has to read three more lines to discover.
+        print(
+            f"\n[SUCCESS] Preview complete: {injected_count} agent file(s) would be affected."
+            "\n[DRY-RUN] Nothing was written. Re-run without --dry-run to apply.\n"
+            "          To roll back an applied change, delete the block between\n"
+            f"          {DEFAULT_START_MARKER} and {DEFAULT_END_MARKER}."
+        )
+    else:
+        print(f"\n[SUCCESS] Successfully injected rules into {injected_count} agent file(s).")
     return 0
 
 
@@ -697,6 +816,13 @@ def main(argv: list[str] | None = None) -> int:
         "--strict",
         action="store_true",
         help="Fail with exit code 1 if zero principles are extracted from constitution",
+    )
+    p_inject.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show exactly which files would be created or updated, with their size "
+             "delta, and write nothing. Preview and write share one code path, so "
+             "the preview cannot disagree with the real run.",
     )
 
     # Validate

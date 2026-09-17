@@ -237,7 +237,7 @@ Suitable for CI/CD pipelines, headless environments, or developers who prefer co
 > script, so `pip install` / `pipx install` are not supported — clone the repository
 > (or install it as a skill) and invoke the script in place.
 
-#### 4-Step Pipeline
+#### 5-Step Pipeline
 
 ```bash
 # Step 1: Detect which AI tools this project already shows traces of (detect, read-only)
@@ -253,18 +253,32 @@ python scripts/scaffold_rules.py init \
   --name "my-service" \
   --purpose "High-throughput log parser"
 
-# Step 3: Incrementally inject rules into agent context files (inject)
-# Parses MUST constraints from ground rules and injects summary inside boundary markers.
+# Step 3: Verify governance compliance (validate)
+# Ensures no unresolved placeholders remain, MUST keywords exist, and rationales are provided.
+# Validating before the first injection keeps an unvetted constitution from being
+# spread across every context file.
+python scripts/scaffold_rules.py validate \
+  --dir /path/to/project
+
+# Step 4: Preview the injection (inject --dry-run)
+# Reports whether each target would be created or updated, with the size delta.
 # --agents is REQUIRED: list only the tools the user confirmed, never the full set.
 python scripts/scaffold_rules.py inject \
   --dir /path/to/project \
-  --agents "agents,claude,cursor"
+  --agents "agents,claude,cursor" \
+  --strict --dry-run
 
-# Step 4: Verify governance compliance (validate)
-# Ensures no unresolved placeholders remain, MUST keywords exist, and rationales are provided
-python scripts/scaffold_rules.py validate \
-  --dir /path/to/project
+# Step 5: Apply for real, once the preview looks right
+python scripts/scaffold_rules.py inject \
+  --dir /path/to/project \
+  --agents "agents,claude,cursor" \
+  --strict
 ```
+
+> `--dry-run` writes nothing: it reports whether each target would be created or
+> updated, with the size delta. Preview and write share one code path, so the
+> preview cannot disagree with the real run. To roll back an applied change,
+> delete the block between `<!-- RULES START -->` and `<!-- RULES END -->`.
 
 #### Exit Codes
 

@@ -82,11 +82,20 @@ python scripts/scaffold_rules.py init \
 python scripts/scaffold_rules.py validate \
   --dir <项目路径>
 
-# 3. 将规则以边界标记注入目标 AI 工具上下文
-#    --agents 必填，且只填用户确认过的键；省略即报错退出，没有默认值
+# 3. 先预览：确认改动范围与体积，不写任何文件
+python scripts/scaffold_rules.py inject \
+  --dir <项目路径> --agents "<确认后的子集>" --strict --dry-run
+
+# 4. 预览无误后再真正落盘（去掉 --dry-run）
 python scripts/scaffold_rules.py inject \
   --dir <项目路径> --agents "<确认后的子集>" --strict
 ```
+
+> **`inject` 会改写用户仓库里已有的文件**，因此先跑 `--dry-run` 是默认动作，不是可选项：
+> 它会列出每个目标文件是新建还是更新、以及字节增量，且**一个字节都不写**。
+> 预览与写入走同一段代码，所以预览不会和实际结果不一致。回滚方式：删掉 `<!-- RULES START/END -->` 之间的整段即可。
+
+> **规则注入块的语言随宪法走**：宪法是中文，生成的标题与卡点就用中文（默认模板即中文）；英文宪法则保持英文。
 
 **`--agents` 没有默认值**：省略会直接报错退出（退出码 `2`）。这是刻意的 —— 默认值会让人不假思索地
 注入一整套规则文件，正是本阶段要防的行为。
