@@ -64,6 +64,28 @@ Project Architect distributes rules to major AI programming environments:
 | **Windsurf** | `.windsurf/rules/project-rules.md` | Marker-wrapped Cascade engine rule directory |
 | **Trae** | `.trae/rules/project_rules.md` | Marker-wrapped ByteDance Trae context |
 
+### Inject Only What You Use
+
+The table above lists *capabilities*, not defaults. Writing rule files is a change to
+someone else's repository: handing a Cursor-only project a `.trae/rules/` directory, a
+`.windsurf/rules/` directory and a `GEMINI.md` is repository pollution, not thoroughness.
+
+So the target set is always a confirmed subset, in three steps:
+
+1. **Detect** — `scaffold_rules.py detect` scans the project for on-disk traces of each
+   tool. It is strictly read-only and writes nothing.
+2. **Confirm** — the agent shows you what it found and asks which tools you actually use.
+   The scan is evidence, not consent: finding a trace never authorises writing to it, and
+   a brand-new project (no traces at all) is exactly when asking matters most.
+3. **Inject** — `--agents` carries only the keys you confirmed. A tool you did not mention
+   is never touched, even if it was detected.
+
+`AGENTS.md` is the exception: it is the tool-agnostic entry point that `init` creates
+anyway, so it can ride along as a default. The other six targets must each be confirmed.
+
+`--agents` has **no default value** for this reason. Omitting it is an error
+(exit code `2`) rather than a silent injection of a whole rule set.
+
 ---
 
 ## Installation & Activation
@@ -142,6 +164,15 @@ Does the tool require complex print styling (custom headers/footers, dynamic pag
 [Developer]
 Let us go with Option A. It must be a self-contained single binary with zero external dependencies.
 
+[Agent asks which tools to configure, after scanning the project for existing traces]
+One more decision before I write anything: which AI tools do you use with this repository?
+- Option A (Recommended): Cursor and Claude Code — the two you are working in now.
+- Option B: also configure GitHub Copilot, Gemini CLI, Windsurf or Trae.
+Rule files are written only for the tools you name. I will not drop .trae/ or .windsurf/ directories into a repository that does not use them.
+
+[Developer]
+Just Cursor and Claude Code.
+
 [Agent locks stack, generates ground rules, and executes scaffolding in background]
 Stack locked: Go 1.22 + pure Go document renderer.
 Establishing 3 non-negotiable ground rules:
@@ -206,23 +237,30 @@ Suitable for CI/CD pipelines, headless environments, or developers who prefer co
 > script, so `pip install` / `pipx install` are not supported — clone the repository
 > (or install it as a skill) and invoke the script in place.
 
-#### 3-Step Pipeline
+#### 4-Step Pipeline
 
 ```bash
-# Step 1: Initialize ground rules and planning templates (init)
+# Step 1: Detect which AI tools this project already shows traces of (detect, read-only)
+# Reports one line per supported tool; writes nothing. Ask the user which of them they
+# actually use before going any further.
+python scripts/scaffold_rules.py detect \
+  --dir /path/to/project
+
+# Step 2: Initialize ground rules and planning templates (init)
 # Generates .specify/memory/constitution.md, spec/plan/tasks templates, and baseline AGENTS.md
 python scripts/scaffold_rules.py init \
   --dir /path/to/project \
   --name "my-service" \
   --purpose "High-throughput log parser"
 
-# Step 2: Incrementally inject rules into agent context files (inject)
-# Parses MUST constraints from ground rules and injects summary inside boundary markers
+# Step 3: Incrementally inject rules into agent context files (inject)
+# Parses MUST constraints from ground rules and injects summary inside boundary markers.
+# --agents is REQUIRED: list only the tools the user confirmed, never the full set.
 python scripts/scaffold_rules.py inject \
   --dir /path/to/project \
   --agents "agents,claude,cursor"
 
-# Step 3: Verify governance compliance (validate)
+# Step 4: Verify governance compliance (validate)
 # Ensures no unresolved placeholders remain, MUST keywords exist, and rationales are provided
 python scripts/scaffold_rules.py validate \
   --dir /path/to/project
@@ -235,8 +273,8 @@ Scripted callers must branch on the exit code rather than matching output text.
 | Code | Meaning |
 |---|---|
 | `0` | Success |
-| `1` | Rule-level failure: validation errors, no principles extracted under `--strict`, or an unrecognised `--agents` key |
-| `2` | I/O failure: unreadable constitution, missing asset template, or a target file that is not valid UTF-8 |
+| `1` | Rule-level failure: validation errors, no principles extracted under `--strict`, an unrecognised `--agents` key, or `detect` finding no tool trace at all |
+| `2` | I/O failure (unreadable constitution, missing asset template, non-UTF-8 target file) or a missing required `--agents` |
 
 All generated files are written as **UTF-8 without BOM, LF line endings**, so the same
 input produces byte-identical output on Windows and Linux.

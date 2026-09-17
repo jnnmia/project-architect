@@ -500,5 +500,128 @@ class TestDocumentationContract(unittest.TestCase):
         self.assertEqual(pyproject_version.group(1), skill_version.group(1))
 
 
+class TestDetectCommand(unittest.TestCase):
+    """detect gathers evidence about which tools a project uses; it must never write."""
+
+    def setUp(self):
+        self.test_dir = Path(tempfile.mkdtemp(prefix="proj_arch_test_"))
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    @staticmethod
+    def _snapshot(root: Path):
+        return sorted(str(p.relative_to(root)) for p in root.rglob("*"))
+
+    def test_empty_project_reports_nothing_and_fails(self):
+        """A brand-new project has no traces, so the caller must go ask the user."""
+        code, out, err = QuietResult.run(
+            scaffold_rules.main, ["detect", "--dir", str(self.test_dir)]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("Ask the user which tools they use", err)
+        for agent in scaffold_rules.AGENT_TARGET_MAP:
+            self.assertIn(agent, out)
+
+    def test_missing_directory_is_an_io_error(self):
+        code, _out, err = QuietResult.run(
+            scaffold_rules.main, ["detect", "--dir", str(self.test_dir / "nope")]
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("does not exist", err)
+
+    def test_detects_only_tools_with_evidence(self):
+        self.test_dir.joinpath(".cursor", "rules").mkdir(parents=True)
+        self.test_dir.joinpath("CLAUDE.md").write_text("# x\n", encoding="utf-8")
+
+        code, out, err = QuietResult.run(
+            scaffold_rules.main, ["detect", "--dir", str(self.test_dir)]
+        )
+        self.assertEqual(code, 0)
+        detected = scaffold_rules.detect_agent_signatures(self.test_dir)
+        self.assertEqual(sorted(detected), ["claude", "cursor"])
+        # Tools with no on-disk trace must not be reported as present.
+        self.assertNotIn("windsurf", detected)
+        self.assertIn("windsurf", out)  # still listed, as "no trace"
+        self.assertIn("[no trace]", out)
+
+    def test_detect_writes_nothing(self):
+        self.test_dir.joinpath(".cursor", "rules").mkdir(parents=True)
+        before = self._snapshot(self.test_dir)
+        scaffold_rules.main(["detect", "--dir", str(self.test_dir)])
+        self.assertEqual(before, self._snapshot(self.test_dir))
+
+    def test_deep_directory_hit_is_reported(self):
+        """A nested project keeps its signatures relative to the scanned root."""
+        nested = self.test_dir / "service"
+        nested.joinpath(".windsurf").mkdir(parents=True)
+        detected = scaffold_rules.detect_agent_signatures(nested)
+        self.assertEqual(sorted(detected), ["windsurf"])
+
+
+class TestAgentTargetSelection(unittest.TestCase):
+    """The injected target set must be an explicit, confirmed subset."""
+
+    def setUp(self):
+        self.test_dir = Path(tempfile.mkdtemp(prefix="proj_arch_test_"))
+        scaffold_rules.main(["init", "--dir", str(self.test_dir), "--name", "demo", "--purpose", "p"])
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_inject_without_agents_is_a_usage_error(self):
+        """Regression: --agents used to default to 'agents,claude,cursor'."""
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as ctx:
+                scaffold_rules.main(["inject", "--dir", str(self.test_dir)])
+        self.assertEqual(ctx.exception.code, 2)
+
+    def test_unconfirmed_tools_are_never_written(self):
+        """Regression: all supported tools used to be injected in one go."""
+        code = scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "agents,claude"])
+        self.assertEqual(code, 0)
+
+        self.assertTrue((self.test_dir / "AGENTS.md").exists())
+        self.assertTrue((self.test_dir / "CLAUDE.md").exists())
+        for rel in [".cursor", ".windsurf", ".trae", "GEMINI.md", ".github"]:
+            with self.subTest(path=rel):
+                self.assertFalse(
+                    (self.test_dir / rel).exists(),
+                    f"{rel} was created for a tool the caller did not ask for",
+                )
+
+    def test_injecting_every_supported_tool_is_not_the_default_path(self):
+        """The full set stays reachable, but only when spelled out explicitly."""
+        everything = ",".join(scaffold_rules.AGENT_TARGET_MAP)
+        code = scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", everything])
+        self.assertEqual(code, 0)
+        for agent, rel in scaffold_rules.AGENT_TARGET_MAP.items():
+            with self.subTest(agent=agent):
+                self.assertTrue((self.test_dir / rel).exists())
+
+
+    def test_skill_md_gates_injection_on_tool_confirmation(self):
+        """The contract must require detect-then-confirm instead of blanket injection."""
+        text = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("detect", text)
+        self.assertIn("禁止全量注入", text)
+        self.assertIn("没有默认值", text)
+
+    def test_documented_agent_sets_stay_narrow(self):
+        """No doc should demonstrate a blanket injection of every supported target."""
+        pattern = re.compile(r'--agents\s+"([^"]+)"')
+        for doc in ("SKILL.md", "README.md", "README.zh-CN.md"):
+            text = (SKILL_ROOT / doc).read_text(encoding="utf-8")
+            for value in pattern.findall(text):
+                keys = [k.strip() for k in value.split(",") if k.strip()]
+                with self.subTest(doc=doc, value=value):
+                    self.assertLessEqual(
+                        len(keys),
+                        3,
+                        f"{doc} demonstrates injecting {len(keys)} targets; "
+                        "documented examples must stay a confirmed subset",
+                    )
+
+
 if __name__ == "__main__":
     unittest.main()

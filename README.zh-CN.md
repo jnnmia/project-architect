@@ -64,6 +64,23 @@ Project Architect 将技术选型与架构原则沉淀为结构化的核心规�
 | **Windsurf** | `.windsurf/rules/project-rules.md` | 标记包裹，适配 Cascade 引擎规则目录 |
 | **Trae** | `.trae/rules/project_rules.md` | 标记包裹，适配 ByteDance Trae 上下文 |
 
+### 只注入你在用的工具
+
+上表列的是**能力边界，不是默认行为**。写规则文件是在改别人的仓库：给一个只用 Cursor 的工程塞进
+`.trae/rules/`、`.windsurf/rules/` 和 `GEMINI.md`，不是「做得更周全」，而是污染代码库。
+
+所以注入目标永远是一个**确认过的子集**，固定三步：
+
+1. **先探测** —— `scaffold_rules.py detect` 扫描工程里各工具的落盘痕迹。**严格只读，不写任何文件。**
+2. **再确认** —— AI 把探测结果摆给你看，问清楚你实际在用哪几个。**探测是证据，不是授权**：
+   扫到痕迹绝不等于可以往那里写；而全新工程（什么痕迹都没有）恰恰是最必须问的情况。
+3. **只注入确认过的** —— `--agents` 只带用户确认的键。没被提到的工具一个都不碰，**即使探测到了**。
+
+`AGENTS.md` 是例外：它是跨工具通用入口，`init` 本来就会创建，因此可作默认随附项。
+其余 6 个目标一律逐个确认。
+
+正因如此，`--agents` **没有默认值** —— 省略会直接报错（退出码 `2`），而不是静默注入一整套规则文件。
+
 ---
 
 ## 安装与激活
@@ -142,6 +159,15 @@ Project Architect 支持两种使用模式：你可以把它当作 AI 助手的�
 [开发者]
 选 A，必须单文件绿色运行，不要装庞大的浏览器。
 
+[AI 先扫描工程里的工具痕迹，再确认注入范围]
+写文件前还有一个决定：这个库你平时用哪些 AI 工具配合？
+- 选项 A (推荐)：Cursor 和 Claude Code —— 也正是你现在正在用的两个。
+- 选项 B：额外配置 GitHub Copilot、Gemini CLI、Windsurf 或 Trae。
+规则文件只会写进你点名的工具。你用不到的工具，我不会往你仓库里塞 .trae/、.windsurf/ 这类目录。
+
+[开发者]
+就 Cursor 和 Claude Code。
+
 [AI 锁定选型、生成底线规则并自动在后台执行脚手架]
 选型已锁定：Go 1.22 + 纯 Go 渲染库。
 确立 3 条不可违背的底线规则：
@@ -204,23 +230,29 @@ Rules Source of Truth: `.specify/memory/constitution.md`
 > 模板资源与脚本同级放在 `assets/templates/`，因此不支持 `pip install` / `pipx install`
 > ——请克隆仓库（或以 skill 方式安装）后原地调用脚本。
 
-#### 3 步终端流水线
+#### 4 步终端流水线
 
 ```bash
-# 步骤 1：初始化底线规则与工作规划模板 (init)
+# 步骤 1：探测工程里已有哪些 AI 工具的痕迹 (detect，只读)
+# 每个支持的工具各输出一行；不写任何文件。先据此问清用户实际在用哪几个，再往下走。
+python scripts/scaffold_rules.py detect \
+  --dir /path/to/project
+
+# 步骤 2：初始化底线规则与工作规划模板 (init)
 # 创建 .specify/memory/constitution.md、需求设计模板与基线 AGENTS.md
 python scripts/scaffold_rules.py init \
   --dir /path/to/project \
   --name "my-service" \
   --purpose "高并发日志解析服务"
 
-# 步骤 2：增量注入规则到各 AI 编程工具上下文 (inject)
-# 自动解析规则中的 MUST 约束，生成摘要并无侵入注入到指定工具文件
+# 步骤 3：增量注入规则到各 AI 编程工具上下文 (inject)
+# 自动解析规则中的 MUST 约束，生成摘要并无侵入注入到指定工具文件。
+# --agents 必填：只填用户确认过的工具，严禁填成全部支持项。
 python scripts/scaffold_rules.py inject \
   --dir /path/to/project \
   --agents "agents,claude,cursor"
 
-# 步骤 3：合规检查 (validate)
+# 步骤 4：合规检查 (validate)
 # 校验占位符是否全替换、是否包含 MUST 强制约束、是否有 Rationale 论证
 python scripts/scaffold_rules.py validate \
   --dir /path/to/project
@@ -233,8 +265,8 @@ python scripts/scaffold_rules.py validate \
 | 码 | 含义 |
 |---|---|
 | `0` | 成功 |
-| `1` | 规则层失败：校验不通过、`--strict` 下未提取到任何原则、`--agents` 中出现无法识别的键 |
-| `2` | I/O 失败：宪法不可读、模板资源缺失、目标文件非 UTF-8 |
+| `1` | 规则层失败：校验不通过、`--strict` 下未提取到任何原则、`--agents` 中出现无法识别的键、`detect` 未发现任何工具痕迹 |
+| `2` | I/O 失败（宪法不可读、模板资源缺失、目标文件非 UTF-8），或缺少必填的 `--agents` |
 
 所有生成文件统一为 **UTF-8 无 BOM + LF 换行**，同一输入在 Windows 与 Linux 上产出字节一致。
 

@@ -7,7 +7,8 @@ managing the project constitution, and injecting rules into multi-agent context 
 Exit codes:
     0  Success.
     1  Rule-level failure: validation errors, no principles extracted under
-       --strict, or an agent key / target that could not be honoured.
+       --strict, an agent key / target that could not be honoured, or `detect`
+       finding no tool signature at all.
     2  I/O failure: unreadable constitution, missing asset template, or a file
        that is not valid UTF-8.
 """
@@ -76,6 +77,20 @@ AGENT_TARGET_MAP: dict[str, str] = {
     "cursor": ".cursor/rules/project-rules.mdc",
     "windsurf": ".windsurf/rules/project-rules.md",
     "trae": ".trae/rules/project_rules.md",
+}
+
+# On-disk evidence that a project actually uses a given tool. Used only by
+# `detect`, which never writes anything: the scan is evidence to drive a
+# question to the user, never a substitute for their consent. Most specific
+# signatures come first so the reported evidence is the most telling one.
+AGENT_SIGNATURES: dict[str, tuple[str, ...]] = {
+    "agents": ("AGENTS.md",),
+    "claude": ("CLAUDE.md", ".claude"),
+    "copilot": (".github/copilot-instructions.md",),
+    "gemini": ("GEMINI.md", ".gemini"),
+    "cursor": (".cursor/rules/project-rules.mdc", ".cursor/rules", ".cursor", ".cursorrules"),
+    "windsurf": (".windsurf",),
+    "trae": (".trae",),
 }
 
 
@@ -331,6 +346,57 @@ def extract_principles(content: str) -> list[tuple[str, list[str]]]:
     return principles_data
 
 
+def detect_agent_signatures(target_dir: Path) -> dict[str, list[str]]:
+    """Return {agent_key: [existing signature paths]} for the target project.
+
+    Read-only by design. An empty result is a normal outcome, not a failure:
+    a brand-new project carries no signatures at all, which is precisely when
+    the caller must ask the user instead of guessing.
+    """
+    detected: dict[str, list[str]] = {}
+    for agent, signatures in AGENT_SIGNATURES.items():
+        hits = [sig for sig in signatures if (target_dir / sig).exists()]
+        if hits:
+            detected[agent] = hits
+    return detected
+
+
+def cmd_detect(args: argparse.Namespace) -> int:
+    """Report which AI tools a project shows evidence of using. Writes nothing."""
+    target_dir = Path(args.dir).resolve()
+    if not target_dir.is_dir():
+        print(f"[ERROR] Target directory does not exist: {target_dir}", file=sys.stderr)
+        return 2
+
+    detected = detect_agent_signatures(target_dir)
+
+    print(f"Scanning {target_dir} for AI tool signatures\n")
+    for agent in AGENT_TARGET_MAP:
+        hits = detected.get(agent)
+        if hits:
+            print(f"  [FOUND]     {agent:<9} <- {', '.join(hits)}")
+        else:
+            print(f"  [no trace]  {agent:<9} (nothing on disk)")
+
+    if not detected:
+        print(
+            "\n[FAIL] No supported AI tool signature found. This project is either "
+            "brand new or uses tools this skill does not know about.\n"
+            "       Ask the user which tools they use - do NOT inject into everything.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(
+        f"\n[SUCCESS] Found traces of {len(detected)} tool(s): {', '.join(detected)}"
+    )
+    print(
+        "Evidence only, not consent: confirm with the user which of these they actually\n"
+        "use before injecting, and never add a tool they did not mention."
+    )
+    return 0
+
+
 def cmd_inject(args: argparse.Namespace) -> int:
     """Inject constitution summary into specified agent context files."""
     target_dir = Path(args.dir).resolve()
@@ -484,13 +550,24 @@ def main(argv: list[str] | None = None) -> int:
     p_init.add_argument("--purpose", default="", help="Project purpose description")
     p_init.add_argument("--force", action="store_true", help="Force overwrite existing files")
 
+    # Detect
+    p_detect = subparsers.add_parser(
+        "detect",
+        help="Report which AI tools this project already shows evidence of using (read-only)",
+    )
+    p_detect.add_argument("--dir", default=".", help="Target project root directory")
+
     # Inject
     p_inject = subparsers.add_parser("inject", help="Inject rules into agent context files")
     p_inject.add_argument("--dir", default=".", help="Target project root directory")
     p_inject.add_argument(
         "--agents",
-        default="agents,claude,cursor",
-        help="Comma-separated agent keys (agents,claude,copilot,gemini,cursor,windsurf,trae)",
+        required=True,
+        help="Comma-separated agent keys to inject into: "
+             "agents,claude,copilot,gemini,cursor,windsurf,trae. "
+             "Deliberately has no default: injecting into a tool the user does not "
+             "use litters their repository, so the target set must be an explicit "
+             "decision (run 'detect' first, then confirm with the user).",
     )
     p_inject.add_argument(
         "--constitution-path",
@@ -517,6 +594,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.subcommand == "init":
             return cmd_init(args)
+        elif args.subcommand == "detect":
+            return cmd_detect(args)
         elif args.subcommand == "inject":
             return cmd_inject(args)
         elif args.subcommand == "validate":
