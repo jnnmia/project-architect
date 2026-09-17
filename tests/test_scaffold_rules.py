@@ -3,6 +3,7 @@
 
 import contextlib
 import io
+import re
 import shutil
 import sys
 import tempfile
@@ -462,6 +463,22 @@ class TestDocumentationContract(unittest.TestCase):
         for template in sorted((SKILL_ROOT / "assets" / "templates").glob("*.md")):
             with self.subTest(template=template.name):
                 self.assertNotIn("scaffold_rules.py", template.read_text(encoding="utf-8"))
+
+
+    def test_readme_trees_only_name_files_that_exist(self):
+        """Guards the drift where both README trees advertised a nonexistent README.en.md."""
+        name_pattern = re.compile(r"\bREADME(?:\.zh-CN|\.en)?\.md\b")
+        for doc in ("README.md", "README.zh-CN.md"):
+            text = (SKILL_ROOT / doc).read_text(encoding="utf-8")
+            # Inspect only the directory-tree block; prose links are not file claims.
+            blocks = text.split("```text")
+            tree = blocks[-1].split("```", 1)[0] if len(blocks) > 1 else ""
+            for name in sorted(set(name_pattern.findall(tree))):
+                with self.subTest(doc=doc, name=name):
+                    self.assertTrue(
+                        (SKILL_ROOT / name).is_file(),
+                        f"{doc} tree lists {name}, which does not exist",
+                    )
 
 
 if __name__ == "__main__":

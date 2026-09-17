@@ -245,10 +245,10 @@ $ python scripts/scaffold_rules.py validate --dir ./md2pdf
 ## 仓库拓扑
 
 ```text
-skills/project-architect/
+project-architect/
 ├── SKILL.md                          # Skill 规范元数据与核心决策流程
-├── README.md                         # 简体中文使用说明
-├── README.en.md                      # 英文版说明
+├── README.md                         # 英文版说明
+├── README.zh-CN.md                   # 简体中文使用说明
 ├── LICENSE                           # MIT 开源许可证
 ├── CONTRIBUTING.md                   # 协作规范与贡献流程
 ├── pyproject.toml                    # 项目配置文件与 pytest 参数

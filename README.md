@@ -245,10 +245,10 @@ $ python scripts/scaffold_rules.py validate --dir ./md2pdf
 ## Project Topology
 
 ```text
-skills/project-architect/
+project-architect/
 ├── SKILL.md                          # Skill metadata and core workflow
-├── README.md                         # Chinese documentation
-├── README.en.md                      # English documentation
+├── README.md                         # English documentation
+├── README.zh-CN.md                   # Chinese documentation
 ├── LICENSE                           # MIT License
 ├── CONTRIBUTING.md                   # Collaboration and contributing guidelines
 ├── pyproject.toml                    # Package configuration and pytest parameters
