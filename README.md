@@ -274,7 +274,7 @@ Scripted callers must branch on the exit code rather than matching output text.
 |---|---|
 | `0` | Success |
 | `1` | Rule-level failure: validation errors, no principles extracted under `--strict`, an unrecognised `--agents` key, or `detect` finding no tool trace at all |
-| `2` | I/O failure (unreadable constitution, missing asset template, non-UTF-8 target file) or a missing required `--agents` |
+| `2` | I/O failure (unreadable or unwritable constitution, missing asset template, non-UTF-8 target file), a `--constitution-path` escaping the project root, or a missing required `--agents` |
 
 All generated files are written as **UTF-8 without BOM, LF line endings**, so the same
 input produces byte-identical output on Windows and Linux.

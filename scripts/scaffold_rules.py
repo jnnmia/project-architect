@@ -9,8 +9,9 @@ Exit codes:
     1  Rule-level failure: validation errors, no principles extracted under
        --strict, an agent key / target that could not be honoured, or `detect`
        finding no tool signature at all.
-    2  I/O failure: unreadable constitution, missing asset template, or a file
-       that is not valid UTF-8.
+    2  I/O failure: unreadable or unwritable file, missing asset template, a
+       file that is not valid UTF-8, or a --constitution-path that escapes the
+       project root.
 """
 
 from __future__ import annotations
@@ -64,9 +65,49 @@ def write_text(destination: Path, text: str) -> None:
     Passing newline="\\n" is what keeps Windows output byte-identical to Linux
     output; without it Python rewrites every \\n as \\r\\n on Windows.
     """
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with open(destination, "w", encoding="utf-8", newline="\n") as f:
-        f.write(normalise_newlines(text))
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with open(destination, "w", encoding="utf-8", newline="\n") as f:
+            f.write(normalise_newlines(text))
+    except OSError as exc:
+        # Read-only files, full disks and permissions must surface as a clean
+        # error code, not an OSError traceback past the exit-code contract.
+        raise RuleIOError(f"Cannot write {destination}: {exc}") from exc
+
+
+def resolve_within(root: Path, relative: str, flag: str) -> Path:
+    """Resolve a project-relative path, refusing anything that escapes root.
+
+    The reference documentation promises that targets stay inside the project
+    root; pathlib does not enforce that on its own. Joining with `/` silently
+    replaces the base when given an absolute path, and '..' climbs out
+    unchallenged, both of which let a caller pull outside content into an
+    injected rule summary.
+    """
+    candidate = Path(relative)
+    resolved_root = root.resolve()
+
+    if candidate.is_absolute():
+        raise RuleIOError(
+            f"{flag} must stay inside the project root ({resolved_root}), "
+            f"but '{relative}' is an absolute path."
+        )
+
+    parts = [p for p in candidate.parts if p not in ("", ".")]
+    if ".." in parts:
+        raise RuleIOError(
+            f"{flag} must stay inside the project root ({resolved_root}), "
+            f"but '{relative}' climbs out of it."
+        )
+
+    resolved = (resolved_root / Path(*parts)).resolve()
+    try:
+        resolved.relative_to(resolved_root)
+    except ValueError:
+        raise RuleIOError(
+            f"{flag} resolves to {resolved}, outside the project root {resolved_root}."
+        ) from None
+    return resolved
 
 
 AGENT_TARGET_MAP: dict[str, str] = {
@@ -204,7 +245,13 @@ def _load_asset_template(template_name: str) -> str:
 def cmd_init(args: argparse.Namespace) -> int:
     """Initialize project constitution and specification templates."""
     target_dir = Path(args.dir).resolve()
+    # A typo in --dir would otherwise scaffold into a brand new directory tree
+    # without saying anything. Creating the target is legitimate; doing it
+    # silently is not, so the action is always reported.
+    created_root = not target_dir.is_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
+    if created_root:
+        print(f"[NOTICE] Target directory did not exist; created: {target_dir}")
 
     project_name = args.name or target_dir.name
     purpose = args.purpose or "工程化软件项目"
@@ -337,13 +384,74 @@ def extract_principles(content: str) -> list[tuple[str, list[str]]]:
                 if RATIONALE_LINE_PATTERN.match(rule_text):
                     continue
                 if len(rule_text) > 200:
+                    truncated_at = current_title or "untitled"
+                    print(
+                        f"[WARN] A rule under '{truncated_at}' exceeds 200 characters and "
+                        "was truncated. Keep summary rules short; leave the detail in "
+                        "the constitution itself.",
+                        file=sys.stderr,
+                    )
                     rule_text = rule_text[:197] + "..."
                 current_rules.append(rule_text)
 
     if current_title:
         principles_data.append((current_title, current_rules))
 
+    if not principles_data:
+        principles_data = _extract_principles_loose(lines)
+
     return principles_data
+
+
+def _extract_principles_loose(lines: list[str]) -> list[tuple[str, list[str]]]:
+    """Fallback pass for two authoring styles the strict parser cannot see.
+
+    The strict parser requires '### <Title>' subsections. Real constitutions
+    are also written as:
+
+        ## Core Principles
+        - Rule one MUST hold.
+
+    (bullets sitting directly under the principles heading), or as
+
+        ## I. Layering
+        - ...
+        ## II. Tests
+        - ...
+
+    (whole sections at level 2). Both used to yield zero principles, which in
+    turn produced a stub rule summary instead of the actual rules. Level 2
+    headings are used as the group titles; metadata sections are skipped, and
+    groups without a single rule are dropped.
+    """
+    principles: list[tuple[str, list[str]]] = []
+    current_title: str | None = None
+    current_rules: list[str] = []
+
+    for raw_line in lines:
+        line = raw_line.strip()
+
+        header_match = re.match(r"^##\s+(.+)$", line)
+        if header_match:
+            title_candidate = header_match.group(1).strip()
+            if current_title is not None and current_rules:
+                principles.append((current_title, current_rules))
+            current_title = title_candidate
+            current_rules = []
+            if METADATA_SECTION_PATTERN.match(line) or RATIONALE_LINE_PATTERN.match(title_candidate):
+                current_title = None
+            continue
+
+        if current_title is not None:
+            bullet_match = re.match(r"^(?:[-*+]|\d+\.)\s+(.+)$", line)
+            if bullet_match and not RATIONALE_LINE_PATTERN.match(bullet_match.group(1)):
+                current_rules.append(bullet_match.group(1).strip())
+
+    if current_title is not None and current_rules:
+        principles.append((current_title, current_rules))
+
+    # The document title and any heading already consumed are not principles.
+    return [(title, rules) for title, rules in principles if rules]
 
 
 def detect_agent_signatures(target_dir: Path) -> dict[str, list[str]]:
@@ -400,7 +508,7 @@ def cmd_detect(args: argparse.Namespace) -> int:
 def cmd_inject(args: argparse.Namespace) -> int:
     """Inject constitution summary into specified agent context files."""
     target_dir = Path(args.dir).resolve()
-    const_file = target_dir / args.constitution_path
+    const_file = resolve_within(target_dir, args.constitution_path, "--constitution-path")
 
     if not const_file.exists():
         print(f"[ERROR] Constitution file not found: {const_file}", file=sys.stderr)
@@ -441,7 +549,9 @@ def cmd_inject(args: argparse.Namespace) -> int:
 
     summary_content = "\n".join(summary_lines)
 
-    selected_agents = [a.strip().lower() for a in args.agents.split(",") if a.strip()]
+    raw_keys = [a.strip().lower() for a in args.agents.split(",") if a.strip()]
+    # 'claude,CLAUDE' written twice must not double-inject or inflate the count.
+    selected_agents = list(dict.fromkeys(raw_keys))
     unknown_agents = [a for a in selected_agents if a not in AGENT_TARGET_MAP]
     injected_count = 0
 
@@ -492,7 +602,7 @@ def cmd_inject(args: argparse.Namespace) -> int:
 def cmd_validate(args: argparse.Namespace) -> int:
     """Validate constitution file against governance standards."""
     target_dir = Path(args.dir).resolve()
-    const_file = target_dir / args.constitution_path
+    const_file = resolve_within(target_dir, args.constitution_path, "--constitution-path")
 
     if not const_file.exists():
         print(f"[FAIL] Constitution file does not exist: {const_file}")
@@ -502,10 +612,19 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
     errors: list[str] = []
 
-    # 1. Check placeholders
-    placeholders = re.findall(r"\[[A-Z0-9_]{3,}\]", text)
-    if placeholders:
-        errors.append(f"Unresolved placeholders found: {', '.join(set(placeholders))}")
+    # 1. Check placeholders. Only template-shaped tokens count: a bare
+    # bracketed word such as [TODO] or [NOTE] is ordinary prose, not an
+    # unfilled slot left behind by a template.
+    tokens = re.findall(r"\[([A-Z0-9_]{3,})\]", text)
+    unresolved = [t for t in tokens if "_" in t and len(t) >= 6]
+    if unresolved:
+        # dict.fromkeys keeps first-occurrence order, so this message is
+        # byte-identical across runs. Iterating a set would reshuffle it by
+        # PYTHONHASHSEED and break the determinism guarantee.
+        errors.append(
+            "Unresolved placeholders found: "
+            + ", ".join(f"[{t}]" for t in dict.fromkeys(unresolved))
+        )
 
     # 2. Check RFC 2119 keywords
     if "MUST" not in text:

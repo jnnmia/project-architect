@@ -266,7 +266,7 @@ python scripts/scaffold_rules.py validate \
 |---|---|
 | `0` | 成功 |
 | `1` | 规则层失败：校验不通过、`--strict` 下未提取到任何原则、`--agents` 中出现无法识别的键、`detect` 未发现任何工具痕迹 |
-| `2` | I/O 失败（宪法不可读、模板资源缺失、目标文件非 UTF-8），或缺少必填的 `--agents` |
+| `2` | I/O 失败（宪法不可读/不可写、模板资源缺失、目标文件非 UTF-8）、`--constitution-path` 逃出项目根目录，或缺少必填的 `--agents` |
 
 所有生成文件统一为 **UTF-8 无 BOM + LF 换行**，同一输入在 Windows 与 Linux 上产出字节一致。
 

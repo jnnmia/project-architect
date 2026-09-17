@@ -3,6 +3,7 @@
 
 import contextlib
 import io
+import os
 import re
 import shutil
 import sys
@@ -621,6 +622,208 @@ class TestAgentTargetSelection(unittest.TestCase):
                         f"{doc} demonstrates injecting {len(keys)} targets; "
                         "documented examples must stay a confirmed subset",
                     )
+
+
+class TestAdversarialHardening(unittest.TestCase):
+    """Defects surfaced by the adversarial audit; each test is a live scoreboard."""
+
+    def setUp(self):
+        self.test_dir = Path(tempfile.mkdtemp(prefix="proj_arch_test_"))
+
+    def tearDown(self):
+        for root, _dirs, files in os.walk(self.test_dir):
+            for name in files:
+                try:
+                    os.chmod(os.path.join(root, name), 0o644)
+                except OSError:
+                    pass
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def _write_constitution(self, body: str) -> Path:
+        mem = self.test_dir / ".specify" / "memory"
+        mem.mkdir(parents=True, exist_ok=True)
+        const = mem / "constitution.md"
+        const.write_text(body, encoding="utf-8")
+        return const
+
+    # -- determinism -------------------------------------------------------
+    def test_placeholder_message_is_deterministic(self):
+        """Regression: the dedupe iterated a set, so order followed PYTHONHASHSEED."""
+        const = self.test_dir / ".specify" / "memory" / "constitution.md"
+        self.test_dir.joinpath(".specify", "memory").mkdir(parents=True)
+        const.write_text(
+            "# C\n\n## Overview\n\n1.0.0\n\n## Core Principles\n\n### P\n"
+            "- A MUST [AAA_TOKEN]\n- B MUST [BBB_TOKEN]\n- C MUST [CCC_TOKEN]\n"
+            "- D MUST [DDD_TOKEN]\n- E MUST [AAA_TOKEN]\n",
+            encoding="utf-8",
+        )
+        runs = set()
+        for _ in range(5):
+            code, out, _err = QuietResult.run(
+                scaffold_rules.main, ["validate", "--dir", str(self.test_dir)]
+            )
+            line = [l for l in out.splitlines() if "Unresolved" in l]
+            self.assertTrue(line, "expected a placeholder error line")
+            if code != 1:
+                # A wrong validate outcome would make the ordering check moot.
+                self.fail(f"validate unexpectedly returned {code}")
+            runs.add(line[0])
+        self.assertEqual(len(runs), 1, f"message is not deterministic: {runs}")
+
+        # strip() drops validate's own "  - " bullet prefix from the report.
+        message = runs.pop().strip().lstrip("-").strip()
+        expected = "Unresolved placeholders found: [AAA_TOKEN], [BBB_TOKEN], [CCC_TOKEN], [DDD_TOKEN]"
+        self.assertEqual(message, expected)
+
+    # -- validate false positives -----------------------------------------
+    def test_common_bracket_words_are_not_placeholders(self):
+        """Regression: [TODO]/[NOTE] in prose failed validation as unfilled slots."""
+        const = self.test_dir / ".specify" / "memory" / "constitution.md"
+        self.test_dir.joinpath(".specify", "memory").mkdir(parents=True)
+        const.write_text(
+            "# C\n\n## Overview\n1.0.0\n\n## Core Principles\n\n### P\n"
+            "- 状态参见 [TODO] 与 [NOTE] 表，标记见 [IMPORTANT]。\n"
+            "- 所有变更 MUST 伴随自动化验证。\n"
+            "- Rationale: 这些是普通排版标记。\n",
+            encoding="utf-8",
+        )
+        code, out, err = QuietResult.run(
+            scaffold_rules.main, ["validate", "--dir", str(self.test_dir)]
+        )
+        self.assertEqual(code, 0, out + err)
+
+    def test_real_unfilled_placeholders_are_still_caught(self):
+        """The relaxation must not let genuinely unfilled template slots through."""
+        self._write_constitution(
+            "# C\n\n## Overview\n1.0.0\n\n## Core Principles\n\n### P\n"
+            "- 参见 [PROJECT_NAME] 与 [FEATURE_BRANCH]。\n"
+        )
+        code, _out, _err = QuietResult.run(
+            scaffold_rules.main, ["validate", "--dir", str(self.test_dir)]
+        )
+        self.assertEqual(code, 1)
+
+    # -- path containment --------------------------------------------------
+    def test_constitution_path_cannot_escape_project_root(self):
+        """Regression: --constitution-path accepted '..' and absolute paths."""
+        outside = self.test_dir.parent / f"secret_{self.test_dir.name}.md"
+        outside.write_text(
+            "# Secret\n\n## Core Principles\n\n### 外部\n- EXFIL MUST NOT appear.\n",
+            encoding="utf-8",
+        )
+        try:
+            for label, path in [
+                ("relative", "../" + outside.name),
+                ("absolute", str(outside)),
+            ]:
+                with self.subTest(kind=label):
+                    code, _out, err = QuietResult.run(
+                        scaffold_rules.main,
+                        ["inject", "--dir", str(self.test_dir), "--agents", "claude",
+                         "--constitution-path", path],
+                    )
+                    self.assertEqual(code, 2)
+                    self.assertIn("must stay inside the project root", err)
+                    claude = self.test_dir / "CLAUDE.md"
+                    self.assertFalse(claude.exists(), "wrote a file from an escaped path")
+        finally:
+            outside.unlink(missing_ok=True)
+
+    # -- principle extraction ----------------------------------------------
+    def test_level_two_section_principles_are_extracted(self):
+        """Regression: '## I. Layering' style constitutions yielded zero principles."""
+        body = (
+            "# C\n\n## I. 分层隔离\n- 高层 MUST NOT 反向依赖底层实现。\n"
+            "- 接口 MUST 显式声明。\n\n## II. 测试底线\n- 核心逻辑 MUST 有自动化测试。\n"
+        )
+        self._write_constitution(body)
+        extracted = scaffold_rules.extract_principles(body)
+        self.assertEqual(len(extracted), 2)
+
+        code, _out, _err = QuietResult.run(
+            scaffold_rules.main, ["inject", "--dir", str(self.test_dir), "--agents", "claude", "--strict"]
+        )
+        self.assertEqual(code, 0)
+        claude = (self.test_dir / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn("#### I. 分层隔离", claude)
+        self.assertIn("高层 MUST NOT 反向依赖底层实现。", claude)
+        self.assertNotIn("Refer to rules document", claude)
+
+    def test_bullets_directly_under_core_principles_are_extracted(self):
+        """Regression: bullets with no '###' sub-heading between them were dropped."""
+        body = (
+            "# C\n\n## Core Principles\n- 规则甲 MUST 成立。\n- 规则乙 MUST 成立。\n"
+        )
+        self._write_constitution(body)
+        extracted = scaffold_rules.extract_principles(body)
+        self.assertEqual(len(extracted), 1)
+        self.assertEqual(extracted[0][0], "Core Principles")
+        self.assertEqual(len(extracted[0][1]), 2)
+
+    def test_loose_parse_does_not_over_grab_metadata(self):
+        """The fallback must not promote an Overview section into a principle."""
+        body = "# Empty Constitution\n\n## Overview\n\nNo principles here.\n"
+        self.assertEqual(scaffold_rules.extract_principles(body), [])
+
+    # -- injection behaviour -------------------------------------------------
+    def test_repeated_agent_keys_inject_once(self):
+        scaffold_rules.main(["init", "--dir", str(self.test_dir), "--name", "demo", "--purpose", "p"])
+        code, out, _err = QuietResult.run(
+            scaffold_rules.main,
+            ["inject", "--dir", str(self.test_dir), "--agents", "claude,claude,CLAUDE"],
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(out.count("[INJECTED]"), 1)
+        claude = (self.test_dir / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertEqual(claude.count(scaffold_rules.DEFAULT_START_MARKER), 1)
+
+    def test_long_rule_truncation_is_announced(self):
+        """Regression: rules over 200 chars were cut down silently."""
+        self._write_constitution(
+            "# C\n\n## Core Principles\n\n### 长规则\n- " + "X" * 260 + "\n"
+        )
+        _code, _out, err = QuietResult.run(
+            scaffold_rules.main, ["inject", "--dir", str(self.test_dir), "--agents", "claude"]
+        )
+        self.assertIn("exceeds 200 characters", err)
+
+    def test_unwritable_target_reports_exit_code_2(self):
+        """Regression: a read-only context file raised a bare PermissionError."""
+        scaffold_rules.main(["init", "--dir", str(self.test_dir), "--name", "demo", "--purpose", "p"])
+        target = self.test_dir / "CLAUDE.md"
+        target.write_text("# existing\n", encoding="utf-8")
+        try:
+            os.chmod(target, 0o444)
+        except OSError as exc:  # pragma: no cover - platform dependent
+            self.skipTest(f"cannot make file read-only here: {exc}")
+
+        code, _out, err, exc = None, "", "", None
+        try:
+            code, _out, err = QuietResult.run(
+                scaffold_rules.main, ["inject", "--dir", str(self.test_dir), "--agents", "claude"]
+            )
+        except OSError as raised:  # pragma: no cover - the regression itself
+            exc = raised
+
+        self.assertIsNone(exc, "uncaughed OSError escaped the exit-code contract")
+        self.assertEqual(code, 2)
+        self.assertIn("Cannot write", err)
+
+    # -- structural invariants ----------------------------------------------
+    def test_signature_table_covers_every_agent_target(self):
+        """A new target forgotten in AGENT_SIGNATURES would never be detected."""
+        self.assertEqual(
+            set(scaffold_rules.AGENT_SIGNATURES),
+            set(scaffold_rules.AGENT_TARGET_MAP),
+        )
+
+    def test_init_reports_a_newly_created_directory(self):
+        target = self.test_dir / "fresh" / "nested"
+        code, out, _err = QuietResult.run(
+            scaffold_rules.main, ["init", "--dir", str(target), "--name", "demo"]
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("Target directory did not exist", out)
 
 
 if __name__ == "__main__":
