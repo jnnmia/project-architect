@@ -4,7 +4,7 @@ description: "用于新项目立项、技术选型对比与规则脚手架生成
 compatibility: "需要本地已安装 Python 3 环境（支持标准库）。"
 allowed-tools: read edit glob grep bash
 metadata:
-  version: "1.0.1"
+  version: "1.1.0"
   author: jnnmia
   agent_created: true
   tags:

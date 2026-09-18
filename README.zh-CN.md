@@ -1,6 +1,6 @@
 # Project Architect
 
-[![skills.sh](https://skills.sh/b/jnnmia/project-architect)](https://skills.sh/jnnmia/project-architect) [![Version](https://img.shields.io/badge/version-v1.0.1-blue.svg)](https://github.com/jnnmia/project-architect/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![skills.sh](https://skills.sh/b/jnnmia/project-architect)](https://skills.sh/jnnmia/project-architect) [![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg)](https://github.com/jnnmia/project-architect/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 [English](./README.md) | 简体中文
 
@@ -363,5 +363,6 @@ pytest -v
 
 | 版本 | 发布日期 | 变更说明 |
 |---|---|---|
+| **v1.1.0** | 2026-09-18 | 新增只读 `detect` 子命令与 `--dry-run` 注入预览；`inject` 的 `--agents` 改为必填，不再有隐式默认值，杜绝向未使用的工具写入规则文件。修复跨平台产出一致性（UTF-8/LF，Windows 与 Linux 字节一致）、堵住 `--constitution-path` 逃出项目根目录、支持以二级标题编写的宪法解析。不再声明 `pip install` 为受支持的安装渠道。测试用例 13 → 61。 |
 | **v1.0.1** | 2026-09-15 | 优化核心描述与规则模板语体，去除 AI 浮夸套话，精简注入提示词并完善自检项。 |
 | **v1.0.0** | 2026-09-15 | 初始正式版本发布。包含五阶段架构设计流、规则脚手架、多 Agent 标记注入、自动化测试套件、开源文档与示例工程。 |

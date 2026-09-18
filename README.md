@@ -1,6 +1,6 @@
 # Project Architect
 
-[![skills.sh](https://skills.sh/b/jnnmia/project-architect)](https://skills.sh/jnnmia/project-architect) [![Version](https://img.shields.io/badge/version-v1.0.1-blue.svg)](https://github.com/jnnmia/project-architect/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
+[![skills.sh](https://skills.sh/b/jnnmia/project-architect)](https://skills.sh/jnnmia/project-architect) [![Version](https://img.shields.io/badge/version-v1.1.0-blue.svg)](https://github.com/jnnmia/project-architect/releases) [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
 English | [简体中文](./README.zh-CN.md)
 
@@ -374,5 +374,6 @@ Issues and Merge Requests are welcome. Before contributing, please review the de
 
 | Version | Release Date | Description |
 |---|---|---|
+| **v1.1.0** | 2026-09-18 | Adds a read-only `detect` subcommand and a `--dry-run` preview for injection. `inject` now requires an explicit `--agents` list instead of defaulting to a broad set, so rule files are never written for tools a project does not use. Fixes platform-dependent output (UTF-8/LF, byte-identical on Windows and Linux), blocks `--constitution-path` from escaping the project root, and parses constitutions written as level-2 sections. `pip install` is no longer declared as a supported channel. Test suite: 13 → 61 cases. |
 | **v1.0.1** | 2026-09-15 | Refined wording in core descriptions and templates to eliminate AI buzzwords, streamlined rule injection prompts, and updated verification checklists. |
 | **v1.0.0** | 2026-09-15 | Baseline release. Features five-stage architectural workflow, ground rules scaffolding, multi-agent marker injection, automated test suite, open-source documentation, and working CLI example. |
