@@ -127,6 +127,8 @@ AGENT_TARGET_MAP: dict[str, str] = {
     "cursor": ".cursor/rules/project-rules.mdc",
     "windsurf": ".windsurf/rules/project-rules.md",
     "trae": ".trae/rules/project_rules.md",
+    "cline": ".clinerules",
+    "continue": ".continue/prompts/project-rules.md",
 }
 
 # On-disk evidence that a project actually uses a given tool. Used only by
@@ -141,7 +143,10 @@ AGENT_SIGNATURES: dict[str, tuple[str, ...]] = {
     "cursor": (".cursor/rules/project-rules.mdc", ".cursor/rules", ".cursor", ".cursorrules"),
     "windsurf": (".windsurf",),
     "trae": (".trae",),
+    "cline": (".clinerules", ".cline"),
+    "continue": (".continue",),
 }
+
 
 
 def _ensure_mdc_frontmatter(content: str) -> str:
@@ -255,6 +260,67 @@ def _upsert_marker_section(
     return action
 
 
+def _plan_eject_marker_section(
+    file_path: Path,
+    start_marker: str,
+    end_marker: str,
+    is_mdc: bool = False,
+) -> tuple[str, str, bool]:
+    """Compute (action, new_content, should_delete) for ejecting a marker block.
+
+    Returns:
+        action: "delete" (if only generated rules/frontmatter remain),
+                "update" (if user custom content remains outside markers),
+                "skip" (if file does not exist or markers not found)
+        new_content: cleaned file content
+        should_delete: boolean indicating whether file should be unlinked
+    """
+    if not file_path.is_file():
+        return "skip", "", False
+
+    content = read_text(file_path)
+    s = content.find(start_marker)
+    e = content.find(end_marker, s if s != -1 else 0)
+
+    if s == -1 or e == -1 or e <= s:
+        return "skip", content, False
+
+    end_pos = e + len(end_marker)
+    if end_pos < len(content) and content[end_pos] == "\r":
+        end_pos += 1
+    if end_pos < len(content) and content[end_pos] == "\n":
+        end_pos += 1
+
+    before = content[:s].rstrip()
+    after = content[end_pos:].lstrip()
+
+    if before and after:
+        new_content = before + "\n\n" + after
+    elif before:
+        new_content = before + "\n"
+    elif after:
+        new_content = after
+    else:
+        new_content = ""
+
+    stripped_residual = new_content.strip()
+
+    # For .mdc files, check if remaining content is only the default frontmatter
+    if is_mdc:
+        fm_match = re.match(
+            r"^---[ \t]*\r?\n[ \t]*alwaysApply[ \t]*:[ \t]*true[ \t]*(?:#.*)?\r?\n---[ \t]*$",
+            stripped_residual,
+        )
+        if fm_match or not stripped_residual:
+            return "delete", "", True
+
+    if not stripped_residual:
+        return "delete", "", True
+
+    return "update", new_content, False
+
+
+
 def _load_asset_template(template_name: str) -> str:
     """Load a template from the sibling assets/templates directory.
 
@@ -343,7 +409,7 @@ RATIONALE_LINE_PATTERN = re.compile(
 )
 
 
-def extract_principles(content: str) -> list[tuple[str, list[str]]]:
+def extract_principles(content: str, max_rule_len: int = 200) -> list[tuple[str, list[str]]]:
     """Extract principles and their normative rules from markdown constitution content.
 
     Resiliently handles:
@@ -417,27 +483,28 @@ def extract_principles(content: str) -> list[tuple[str, list[str]]]:
                 rule_text = bullet_match.group(1).strip()
                 if RATIONALE_LINE_PATTERN.match(rule_text):
                     continue
-                if len(rule_text) > 200:
+                if max_rule_len > 0 and len(rule_text) > max_rule_len:
                     truncated_at = current_title or "untitled"
                     print(
-                        f"[WARN] A rule under '{truncated_at}' exceeds 200 characters and "
+                        f"[WARN] A rule under '{truncated_at}' exceeds {max_rule_len} characters and "
                         "was truncated. Keep summary rules short; leave the detail in "
                         "the constitution itself.",
                         file=sys.stderr,
                     )
-                    rule_text = rule_text[:197] + "..."
+                    rule_text = rule_text[: max_rule_len - 3] + "..."
                 current_rules.append(rule_text)
 
     if current_title:
         principles_data.append((current_title, current_rules))
 
     if not principles_data:
-        principles_data = _extract_principles_loose(lines)
+        principles_data = _extract_principles_loose(lines, max_rule_len=max_rule_len)
 
     return principles_data
 
 
-def _extract_principles_loose(lines: list[str]) -> list[tuple[str, list[str]]]:
+
+def _extract_principles_loose(lines: list[str], max_rule_len: int = 200) -> list[tuple[str, list[str]]]:
     """Fallback pass for two authoring styles the strict parser cannot see.
 
     The strict parser requires '### <Title>' subsections. Real constitutions
@@ -479,13 +546,24 @@ def _extract_principles_loose(lines: list[str]) -> list[tuple[str, list[str]]]:
         if current_title is not None:
             bullet_match = re.match(r"^(?:[-*+]|\d+\.)\s+(.+)$", line)
             if bullet_match and not RATIONALE_LINE_PATTERN.match(bullet_match.group(1)):
-                current_rules.append(bullet_match.group(1).strip())
+                rule_text = bullet_match.group(1).strip()
+                if max_rule_len > 0 and len(rule_text) > max_rule_len:
+                    truncated_at = current_title or "untitled"
+                    print(
+                        f"[WARN] A rule under '{truncated_at}' exceeds {max_rule_len} characters and "
+                        "was truncated. Keep summary rules short; leave the detail in "
+                        "the constitution itself.",
+                        file=sys.stderr,
+                    )
+                    rule_text = rule_text[: max_rule_len - 3] + "..."
+                current_rules.append(rule_text)
 
     if current_title is not None and current_rules:
         principles.append((current_title, current_rules))
 
     # The document title and any heading already consumed are not principles.
     return [(title, rules) for title, rules in principles if rules]
+
 
 
 def detect_agent_signatures(target_dir: Path) -> dict[str, list[str]]:
@@ -531,7 +609,8 @@ def cmd_detect(args: argparse.Namespace) -> int:
             "they use, and do NOT inject into everything.",
             file=sys.stderr,
         )
-        return 1
+        return 1 if getattr(args, "fail_if_empty", False) else 0
+
 
     print(
         f"\n[SUCCESS] Found traces of {len(detected)} tool(s): {', '.join(detected)}"
@@ -612,7 +691,9 @@ def cmd_inject(args: argparse.Namespace) -> int:
         return 1
 
     content = read_text(const_file)
-    principles_data = extract_principles(content)
+    max_rule_len = getattr(args, "max_rule_len", 200)
+    principles_data = extract_principles(content, max_rule_len=max_rule_len)
+
 
     labels = SUMMARY_LABELS[summary_language(principles_data, content)]
 
@@ -745,13 +826,20 @@ def cmd_validate(args: argparse.Namespace) -> int:
             + ", ".join(f"[{t}]" for t in dict.fromkeys(unresolved))
         )
 
-    # 2. Check RFC 2119 keywords
-    if "MUST" not in text:
-        errors.append("Constitution lacks declarative 'MUST' normative constraints.")
+    # 2. Check RFC 2119 keywords or Chinese normative keywords
+    has_normative = bool(re.search(r"\bMUST\b", text)) or bool(re.search(r"(?:必须|严禁|不得|禁止)", text))
+    if not has_normative:
+        errors.append("Constitution lacks declarative 'MUST' or Chinese normative constraints (必须/严禁/不得/禁止).")
 
     # 3. Check Rationale
-    if "Rationale" not in text and "*Rationale:*" not in text:
+    has_rationale = (
+        "Rationale" in text
+        or "*Rationale:*" in text
+        or bool(re.search(r"(?:架构理由|选型理由|设计理由|设计说明)\b", text))
+    )
+    if not has_rationale:
         errors.append("Principles should include architectural 'Rationale' justifications.")
+
 
     # 4. Check SemVer or Version change
     if (
@@ -771,6 +859,82 @@ def cmd_validate(args: argparse.Namespace) -> int:
         return 1
 
     print(f"[PASS] Constitution '{const_file}' meets all governance criteria.")
+    return 0
+
+
+def cmd_eject(args: argparse.Namespace) -> int:
+    """Eject injected rules from agent context files."""
+    target_dir = Path(args.dir).resolve()
+    if not target_dir.is_dir():
+        print(f"[ERROR] Target directory does not exist: {target_dir}", file=sys.stderr)
+        return 2
+
+    raw_keys = [a.strip().lower() for a in args.agents.split(",") if a.strip()]
+    selected_agents = list(dict.fromkeys(raw_keys))
+    unknown_agents = [a for a in selected_agents if a not in AGENT_TARGET_MAP]
+
+    ejected_count = 0
+    for agent in selected_agents:
+        if agent not in AGENT_TARGET_MAP:
+            continue
+
+        rel_path = AGENT_TARGET_MAP[agent]
+        dest_file = target_dir / rel_path
+        is_mdc = rel_path.endswith(".mdc")
+
+        if not dest_file.exists():
+            print(f"[SKIP] target file does not exist: {dest_file}")
+            continue
+
+        action, cleaned_content, should_delete = _plan_eject_marker_section(
+            dest_file,
+            DEFAULT_START_MARKER,
+            DEFAULT_END_MARKER,
+            is_mdc,
+        )
+
+        if action == "skip":
+            print(f"[SKIP] no rules markers found in: {dest_file}")
+            continue
+
+        if getattr(args, "dry_run", False):
+            if should_delete:
+                print(f"[DRY-RUN] would delete {dest_file} (no user content remains)")
+            else:
+                before_size = dest_file.stat().st_size
+                after_size = len(cleaned_content.encode("utf-8"))
+                print(
+                    f"[DRY-RUN] would update {dest_file} "
+                    f"({before_size} -> {after_size} bytes, {after_size - before_size:+d})"
+                )
+        else:
+            if should_delete:
+                dest_file.unlink(missing_ok=True)
+                print(f"[DELETED] empty agent context: {dest_file}")
+                try:
+                    dest_file.parent.rmdir()
+                    dest_file.parent.parent.rmdir()
+                except OSError:
+                    pass
+            else:
+                write_text(dest_file, cleaned_content)
+                print(f"[UPDATED] stripped rules from: {dest_file}")
+
+        ejected_count += 1
+
+    for agent in unknown_agents:
+        print(
+            f"[ERROR] Unknown agent key: '{agent}'. Supported: {', '.join(AGENT_TARGET_MAP)}",
+            file=sys.stderr,
+        )
+
+    if unknown_agents:
+        return 1
+
+    if getattr(args, "dry_run", False):
+        print(f"\n[SUCCESS] Preview complete: {ejected_count} agent file(s) would be cleaned.")
+    else:
+        print(f"\n[SUCCESS] Successfully ejected rules from {ejected_count} agent file(s).")
     return 0
 
 
@@ -794,6 +958,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Report which AI tools this project already shows evidence of using (read-only)",
     )
     p_detect.add_argument("--dir", default=".", help="Target project root directory")
+    p_detect.add_argument(
+        "--fail-if-empty",
+        action="store_true",
+        help="Exit with code 1 if no tool signatures are detected (default: exit 0 with notice)",
+    )
 
     # Inject
     p_inject = subparsers.add_parser("inject", help="Inject rules into agent context files")
@@ -802,7 +971,7 @@ def main(argv: list[str] | None = None) -> int:
         "--agents",
         required=True,
         help="Comma-separated agent keys to inject into: "
-             "agents,claude,copilot,gemini,cursor,windsurf,trae. "
+             f"{', '.join(AGENT_TARGET_MAP)}. "
              "Deliberately has no default: injecting into a tool the user does not "
              "use litters their repository, so the target set must be an explicit "
              "decision (run 'detect' first, then confirm with the user).",
@@ -824,6 +993,26 @@ def main(argv: list[str] | None = None) -> int:
              "delta, and write nothing. Preview and write share one code path, so "
              "the preview cannot disagree with the real run.",
     )
+    p_inject.add_argument(
+        "--max-rule-len",
+        type=int,
+        default=200,
+        help="Maximum character length per extracted summary rule (default: 200, 0 to disable truncation)",
+    )
+
+    # Eject
+    p_eject = subparsers.add_parser("eject", help="Eject injected rules from agent context files")
+    p_eject.add_argument("--dir", default=".", help="Target project root directory")
+    p_eject.add_argument(
+        "--agents",
+        required=True,
+        help=f"Comma-separated agent keys to eject rules from: {', '.join(AGENT_TARGET_MAP)}",
+    )
+    p_eject.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Preview eject changes without modifying files",
+    )
 
     # Validate
     p_val = subparsers.add_parser("validate", help="Validate constitution file quality")
@@ -843,6 +1032,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_detect(args)
         elif args.subcommand == "inject":
             return cmd_inject(args)
+        elif args.subcommand == "eject":
+            return cmd_eject(args)
         elif args.subcommand == "validate":
             return cmd_validate(args)
     except RuleIOError as exc:
@@ -853,3 +1044,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

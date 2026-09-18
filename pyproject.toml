@@ -16,7 +16,7 @@
 
 [project]
 name = "project-architect"
-version = "1.1.0"
+version = "1.2.0"
 description = "Project architecture, non-negotiable constitution scaffolding, and multi-agent rule synchronization tool."
 readme = "README.md"
 authors = [

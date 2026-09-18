@@ -471,15 +471,23 @@ class TestDocumentationContract(unittest.TestCase):
     def test_readme_trees_only_name_files_that_exist(self):
         """Guards the drift where both README trees advertised a nonexistent README.en.md."""
         name_pattern = re.compile(r"\bREADME(?:\.zh-CN|\.en)?\.md\b")
-        for doc in ("README.md", "README.zh-CN.md"):
+        docs = [d for d in ("README.md", "README.en.md", "README.zh-CN.md") if (SKILL_ROOT / d).is_file()]
+        for doc in docs:
             text = (SKILL_ROOT / doc).read_text(encoding="utf-8")
             # Inspect only the directory-tree block; prose links are not file claims.
             blocks = text.split("```text")
             tree = blocks[-1].split("```", 1)[0] if len(blocks) > 1 else ""
             for name in sorted(set(name_pattern.findall(tree))):
                 with self.subTest(doc=doc, name=name):
+                    # In GitHub layout: README.md is EN, README.zh-CN.md is CN.
+                    # In clean-core layout: README.md is CN, README.en.md is EN.
+                    exists = (SKILL_ROOT / name).is_file() or (
+                        name in ("README.zh-CN.md", "README.en.md")
+                        and (SKILL_ROOT / "README.md").is_file()
+                        and ((SKILL_ROOT / "README.en.md").is_file() or (SKILL_ROOT / "README.zh-CN.md").is_file())
+                    )
                     self.assertTrue(
-                        (SKILL_ROOT / name).is_file(),
+                        exists,
                         f"{doc} tree lists {name}, which does not exist",
                     )
 
@@ -516,18 +524,25 @@ class TestDetectCommand(unittest.TestCase):
     def _snapshot(root: Path):
         return sorted(str(p.relative_to(root)) for p in root.rglob("*"))
 
-    def test_empty_project_reports_nothing_and_fails(self):
-        """A brand-new project has no traces, so the caller must go ask the user."""
+    def test_empty_project_reports_nothing_and_succeeds(self):
+        """A brand-new project has no traces, but exits 0 with notice to avoid breaking pipelines."""
         code, out, err = QuietResult.run(
             scaffold_rules.main, ["detect", "--dir", str(self.test_dir)]
         )
-        self.assertEqual(code, 1)
-        # Not [FAIL]: a brand-new project is a normal outcome, not a broken one.
+        self.assertEqual(code, 0)
         self.assertNotIn("[FAIL]", err)
         self.assertIn("[NOTICE]", err)
         self.assertIn("ask the user which tools they use", err)
         for agent in scaffold_rules.AGENT_TARGET_MAP:
             self.assertIn(agent, out)
+
+    def test_empty_project_fails_with_fail_if_empty_flag(self):
+        code, _out, err = QuietResult.run(
+            scaffold_rules.main, ["detect", "--dir", str(self.test_dir), "--fail-if-empty"]
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("[NOTICE]", err)
+
 
     def test_missing_directory_is_an_io_error(self):
         code, _out, err = QuietResult.run(
@@ -616,7 +631,8 @@ class TestAgentTargetSelection(unittest.TestCase):
     def test_documented_agent_sets_stay_narrow(self):
         """No doc should demonstrate a blanket injection of every supported target."""
         pattern = re.compile(r'--agents\s+"([^"]+)"')
-        for doc in ("SKILL.md", "README.md", "README.zh-CN.md"):
+        docs = [d for d in ("SKILL.md", "README.md", "README.en.md", "README.zh-CN.md") if (SKILL_ROOT / d).is_file()]
+        for doc in docs:
             text = (SKILL_ROOT / doc).read_text(encoding="utf-8")
             for value in pattern.findall(text):
                 keys = [k.strip() for k in value.split(",") if k.strip()]
@@ -977,5 +993,127 @@ class TestUsabilityAndPreview(unittest.TestCase):
         self.assertLessEqual(calls["n"], 3, f"resolve() called {calls['n']} times")
 
 
+class TestChineseNormativeValidation(unittest.TestCase):
+    def setUp(self):
+        self.test_dir = Path(tempfile.mkdtemp(prefix="proj_arch_test_"))
+        self.mem_dir = self.test_dir / ".specify" / "memory"
+        self.mem_dir.mkdir(parents=True)
+        self.const_file = self.mem_dir / "constitution.md"
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_validate_passes_with_chinese_normative_keywords(self):
+        """A constitution written purely in Chinese with '必须' / '严禁' passes validate."""
+        content = (
+            "# 项目宪法\n\n"
+            "## 核心原则\n\n"
+            "### 1. 架构分层\n"
+            "- 核心业务逻辑必须保持接口隔离，严禁循环依赖。\n"
+            "*架构理由:* 保持单向依赖与可维护性。\n\n"
+            "### 版本控制\n"
+            "SemVer: 1.0.0\n"
+        )
+        self.const_file.write_text(content, encoding="utf-8")
+        code, out, err = QuietResult.run(
+            scaffold_rules.main, ["validate", "--dir", str(self.test_dir)]
+        )
+        self.assertEqual(code, 0, f"Validation failed on Chinese constitution: {err}")
+        self.assertIn("[PASS]", out)
+
+
+class TestEjectCommand(unittest.TestCase):
+    def setUp(self):
+        self.test_dir = Path(tempfile.mkdtemp(prefix="proj_arch_test_"))
+        scaffold_rules.main(["init", "--dir", str(self.test_dir), "--name", "eject-demo", "--purpose", "testing eject"])
+        scaffold_rules.main(["inject", "--dir", str(self.test_dir), "--agents", "claude,cursor,cline"])
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_eject_removes_rules_and_deletes_empty_files(self):
+        """Eject on files that only have generated rules deletes them."""
+        cursor_file = self.test_dir / ".cursor" / "rules" / "project-rules.mdc"
+        cline_file = self.test_dir / ".clinerules"
+        self.assertTrue(cursor_file.is_file())
+        self.assertTrue(cline_file.is_file())
+
+        code, out, _err = QuietResult.run(
+            scaffold_rules.main, ["eject", "--dir", str(self.test_dir), "--agents", "cursor,cline"]
+        )
+        self.assertEqual(code, 0)
+        self.assertFalse(cursor_file.exists(), "Empty .cursor file should be deleted")
+        self.assertFalse(cline_file.exists(), "Empty .clinerules should be deleted")
+        self.assertIn("[DELETED]", out)
+
+    def test_eject_preserves_user_custom_instructions(self):
+        """Eject strips only the marker block and keeps user custom instructions intact."""
+        claude_file = self.test_dir / "CLAUDE.md"
+        existing = claude_file.read_text(encoding="utf-8")
+        user_header = "# My Custom Instructions\n- test: pytest -v\n\n"
+        claude_file.write_text(user_header + existing, encoding="utf-8")
+
+        code, out, _err = QuietResult.run(
+            scaffold_rules.main, ["eject", "--dir", str(self.test_dir), "--agents", "claude"]
+        )
+        self.assertEqual(code, 0)
+        self.assertTrue(claude_file.is_file())
+        cleaned = claude_file.read_text(encoding="utf-8")
+        self.assertIn("# My Custom Instructions", cleaned)
+        self.assertIn("- test: pytest -v", cleaned)
+        self.assertNotIn("<!-- RULES START -->", cleaned)
+        self.assertNotIn("<!-- RULES END -->", cleaned)
+        self.assertIn("[UPDATED]", out)
+
+    def test_eject_dry_run_writes_nothing(self):
+        """Eject --dry-run previews removals without modifying disk."""
+        claude_file = self.test_dir / "CLAUDE.md"
+        before = claude_file.read_text(encoding="utf-8")
+        code, out, _err = QuietResult.run(
+            scaffold_rules.main, ["eject", "--dir", str(self.test_dir), "--agents", "claude", "--dry-run"]
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("[DRY-RUN]", out)
+        after = claude_file.read_text(encoding="utf-8")
+        self.assertEqual(before, after)
+
+    def test_eject_skips_missing_or_unmarked_files(self):
+        unmarked = self.test_dir / "GEMINI.md"
+        unmarked.write_text("# Unmarked file\n", encoding="utf-8")
+        code, out, _err = QuietResult.run(
+            scaffold_rules.main, ["eject", "--dir", str(self.test_dir), "--agents", "gemini,windsurf"]
+        )
+        self.assertEqual(code, 0)
+        self.assertIn("[SKIP] target file does not exist", out)
+        self.assertIn("[SKIP] no rules markers found", out)
+
+
+class TestMaxRuleLenControl(unittest.TestCase):
+    def setUp(self):
+        self.test_dir = Path(tempfile.mkdtemp(prefix="proj_arch_test_"))
+        scaffold_rules.main(["init", "--dir", str(self.test_dir), "--name", "len-demo", "--purpose", "testing len"])
+
+    def tearDown(self):
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_max_rule_len_zero_disables_truncation(self):
+        """Passing --max-rule-len 0 preserves rules exceeding 200 chars in full."""
+        long_rule = "A" * 300
+        const = self.test_dir / ".specify" / "memory" / "constitution.md"
+        const.write_text(
+            f"# Test\n\n## Core Principles\n\n### 1. Long Rule\n- {long_rule}\n\n*Rationale:* needed.\n\nSemVer: 1.0.0\n",
+            encoding="utf-8",
+        )
+        code, _out, err = QuietResult.run(
+            scaffold_rules.main,
+            ["inject", "--dir", str(self.test_dir), "--agents", "claude", "--max-rule-len", "0"],
+        )
+        self.assertEqual(code, 0)
+        self.assertNotIn("exceeds", err)
+        claude_text = (self.test_dir / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn(long_rule, claude_text)
+
+
 if __name__ == "__main__":
     unittest.main()
+

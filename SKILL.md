@@ -4,7 +4,7 @@ description: "用于新项目立项、技术选型对比与规则脚手架生成
 compatibility: "需要本地已安装 Python 3 环境（支持标准库）。"
 allowed-tools: read edit glob grep bash
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   author: jnnmia
   agent_created: true
   tags:
@@ -12,7 +12,6 @@ metadata:
     - tech-stack
     - ground-rules
     - checkpoints
-license: MIT
 ---
 
 
@@ -65,7 +64,7 @@ license: MIT
 3. **只注入已确认的**：`--agents` 只填用户确认的键。用户没提到的工具，即使探测到了也不注入。
 
 > **`agents` 的例外**：`AGENTS.md` 是跨工具通用的规则入口（`init` 本身就会创建它），可视作默认随附项；
-> 其余 6 个目标（claude / copilot / gemini / cursor / windsurf / trae）MUST 逐个确认。
+> 其余目标（claude / copilot / gemini / cursor / windsurf / trae / cline / continue）MUST 逐个确认。
 
 > **执行位置**：以下命令一律在**本 skill 根目录**（即同时含 `scripts/` 与 `assets/templates/` 的那一层）下运行。脚本以自身位置定位模板资源，`--dir` 才指向目标工程；写死任何安装前缀（如 `skills/project-architect/...`）在不同安装方式下都会失效。
 
@@ -78,7 +77,7 @@ python scripts/scaffold_rules.py detect \
 python scripts/scaffold_rules.py init \
   --dir <项目路径> --name "<项目名>" --purpose "<定位陈述>"
 
-# 2. 检查规则文本合规度（占位符替换、MUST约束存在性、版本标注）
+# 2. 检查规则文本合规度（占位符替换、MUST/中文强断言约束、版本标注）
 python scripts/scaffold_rules.py validate \
   --dir <项目路径>
 
@@ -89,11 +88,15 @@ python scripts/scaffold_rules.py inject \
 # 4. 预览无误后再真正落盘（去掉 --dry-run）
 python scripts/scaffold_rules.py inject \
   --dir <项目路径> --agents "<确认后的子集>" --strict
+
+# 5. 如需移除指定工具的规则或回滚注入（支持 --dry-run 预览）
+python scripts/scaffold_rules.py eject \
+  --dir <项目路径> --agents "<待清理子集>"
 ```
 
 > **`inject` 会改写用户仓库里已有的文件**，因此先跑 `--dry-run` 是默认动作，不是可选项：
 > 它会列出每个目标文件是新建还是更新、以及字节增量，且**一个字节都不写**。
-> 预览与写入走同一段代码，所以预览不会和实际结果不一致。回滚方式：删掉 `<!-- RULES START/END -->` 之间的整段即可。
+> 预览与写入走同一段代码，所以预览不会和实际结果不一致。回滚方式：执行 `eject` 或删掉 `<!-- RULES START/END -->` 之间的整段即可。
 
 > **规则注入块的语言随宪法走**：宪法是中文，生成的标题与卡点就用中文（默认模板即中文）；英文宪法则保持英文。
 
@@ -104,9 +107,10 @@ python scripts/scaffold_rules.py inject \
 
 | 码 | 含义 |
 |---|---|
-| `0` | 成功 |
-| `1` | 规则层失败：校验不通过、`--strict` 下未提取到任何原则、`--agents` 中出现无法识别的键、`detect` 未发现任何工具痕迹 |
+| `0` | 成功（包含 `detect` 探测完成，即使痕迹为空也默认返回 0） |
+| `1` | 规则层失败：校验不通过、`--strict` 下未提取到任何原则、`--agents` 中出现无法识别的键、`detect` 在附带 `--fail-if-empty` 时未发现痕迹 |
 | `2` | I/O 失败：宪法不可读/不可写、模板资源缺失、目标文件非 UTF-8、`--constitution-path` 逃出项目根目录、缺少必填的 `--agents` |
+
 
 > **`--constitution-path` 被强制限制在项目根目录内**：绝对路径与含 `..` 的路径一律拒绝。
 > pathlib 自身不做这层约束 —— `Path(项目根) / 绝对路径` 会直接丢弃项目根，导致把外部文件内容注入进工程。
