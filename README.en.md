@@ -74,19 +74,23 @@ someone else's repository: handing a Cursor-only project a `.trae/rules/` direct
 
 So the target set is always a confirmed subset, in three steps:
 
-1. **Detect** — `scaffold_rules.py detect` scans the project for on-disk traces of each
-   tool. It is strictly read-only and writes nothing.
-2. **Confirm** — the agent shows you what it found and asks which tools you actually use.
-   The scan is evidence, not consent: finding a trace never authorises writing to it, and
-   a brand-new project (no traces at all) is exactly when asking matters most.
-3. **Inject** — `--agents` carries only the keys you confirmed. A tool you did not mention
-   is never touched, even if it was detected.
+1. **Detect** — `scaffold_rules.py detect` automatically recognizes the active agent tool
+   in the current runtime and scans the project for on-disk traces of each tool.
+   It is strictly read-only and writes nothing.
+2. **Confirm** — the agent highlights the detected active tool and asks which tools you
+   actually use. The scan and active detection are evidence and recommendations, not consent:
+   finding a trace never authorises writing to it, and a brand-new project (no traces at all)
+   is exactly when asking matters most.
+3. **Inject** — `--agents` carries only the keys you confirmed (or `--agents auto` to automatically
+   bind the active agent and on-disk traces). A tool you did not mention is never touched,
+   even if it was detected.
 
 `AGENTS.md` is the exception: it is the tool-agnostic entry point that `init` creates
 anyway, so it can ride along as a default. The other eight targets must each be confirmed.
 
 `--agents` has **no default value** for this reason. Omitting it is an error
-(exit code `2`) rather than a silent injection of a whole rule set.
+(exit code `2`) rather than a silent injection of a whole rule set. You may pass `--agents auto`
+to explicitly bind the active agent and discovered signatures.
 
 ---
 
@@ -381,6 +385,7 @@ Issues and Merge Requests are welcome. Before contributing, please review the de
 
 | Version | Release Date | Description |
 |---|---|---|
+| **v1.2.1** | 2026-10-14 | Adds automatic recognition of active agent tools from runtime environment (`CLAUDE_CODE`, `CURSOR_AGENT`, `ANTIGRAVITY_AGENT`, `GEMINI_CLI`, `WINDSURF_AGENT`, `TRAE_AGENT`, etc.); adds `--active-only` flag to `detect`; natively supports `--agents auto` (resolves active agent + on-disk traces) and `--agents current` in `inject` and `eject`. |
 | **v1.2.0** | 2026-09-18 | Adds reverse rollback and cleanup subcommand `eject` (with marker stripping, pure generated file removal, and `--dry-run`); expands agent ecosystem with native Cline (`.clinerules`) and Continue (`.continue/prompts/project-rules.md`) support; adjusts `detect` default exit code to 0 on empty project (adds `--fail-if-empty` for strict CI); validates Chinese normative assertions (必须/严禁/不得/禁止) and rationale terms; adds `--max-rule-len` (default 200, 0 disables). Test suite: 61 → 68 cases. |
 | **v1.1.0** | 2026-09-18 | Adds a read-only `detect` subcommand and a `--dry-run` preview for injection. `inject` now requires an explicit `--agents` list instead of defaulting to a broad set, so rule files are never written for tools a project does not use. Fixes platform-dependent output (UTF-8/LF, byte-identical on Windows and Linux), blocks `--constitution-path` from escaping the project root, and parses constitutions written as level-2 sections. `pip install` is no longer declared as a supported channel. Test suite: 13 → 61 cases. |
 | **v1.0.1** | 2026-09-15 | Refined wording in core descriptions and templates to eliminate AI buzzwords, streamlined rule injection prompts, and updated verification checklists. |

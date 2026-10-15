@@ -580,6 +580,109 @@ class TestDetectCommand(unittest.TestCase):
         self.assertEqual(sorted(detected), ["windsurf"])
 
 
+class TestActiveAgentDetection(unittest.TestCase):
+    """Active agent detection from environment variables and process markers."""
+
+    def test_active_agent_indicators_table_matches_targets(self):
+        """All keys in ACTIVE_AGENT_INDICATORS must be known agents."""
+        for agent in scaffold_rules.ACTIVE_AGENT_INDICATORS:
+            self.assertIn(agent, scaffold_rules.AGENT_TARGET_MAP)
+
+    def test_detect_claude_environment(self):
+        env = {"CLAUDE_CODE": "1"}
+        agent, reason = scaffold_rules.detect_active_agent(env)
+        self.assertEqual(agent, "claude")
+        self.assertIn("CLAUDE_CODE", reason)
+
+    def test_detect_cursor_environment(self):
+        env = {"CURSOR_AGENT": "1"}
+        agent, reason = scaffold_rules.detect_active_agent(env)
+        self.assertEqual(agent, "cursor")
+        self.assertIn("CURSOR_AGENT", reason)
+
+    def test_detect_cursor_terminal_emulator(self):
+        env = {"TERMINAL_EMULATOR": "Cursor"}
+        agent, reason = scaffold_rules.detect_active_agent(env)
+        self.assertEqual(agent, "cursor")
+        self.assertIn("Cursor", reason)
+
+    def test_detect_gemini_and_antigravity_environment(self):
+        env_gemini = {"GEMINI_CLI": "1"}
+        agent, _ = scaffold_rules.detect_active_agent(env_gemini)
+        self.assertEqual(agent, "gemini")
+
+        env_antigravity = {"ANTIGRAVITY_AGENT": "1"}
+        agent2, _ = scaffold_rules.detect_active_agent(env_antigravity)
+        self.assertEqual(agent2, "gemini")
+
+    def test_detect_windsurf_environment(self):
+        env = {"WINDSURF_VERSION": "1.0.0"}
+        agent, _ = scaffold_rules.detect_active_agent(env)
+        self.assertEqual(agent, "windsurf")
+
+    def test_detect_trae_environment(self):
+        env = {"TRAE_VERSION": "1.0.0"}
+        agent, _ = scaffold_rules.detect_active_agent(env)
+        self.assertEqual(agent, "trae")
+
+    def test_detect_cline_environment(self):
+        env = {"CLINE_AGENT": "1"}
+        agent, _ = scaffold_rules.detect_active_agent(env)
+        self.assertEqual(agent, "cline")
+
+    def test_detect_continue_environment(self):
+        env = {"CONTINUE_GLOBAL_DIR": str(Path.home() / ".continue")}
+        agent, _ = scaffold_rules.detect_active_agent(env)
+        self.assertEqual(agent, "continue")
+
+    def test_detect_copilot_environment(self):
+        env = {"GITHUB_COPILOT": "1"}
+        agent, _ = scaffold_rules.detect_active_agent(env)
+        self.assertEqual(agent, "copilot")
+
+    def test_detect_explicit_override_precedence(self):
+        env = {
+            "CLAUDE_CODE": "1",
+            "ACTIVE_AGENT": "trae",
+        }
+        agent, reason = scaffold_rules.detect_active_agent(env)
+        self.assertEqual(agent, "trae")
+        self.assertIn("override", reason)
+
+    def test_no_active_agent_when_environment_is_empty(self):
+        agent, reason = scaffold_rules.detect_active_agent({})
+        self.assertIsNone(agent)
+        self.assertIn("no active agent", reason)
+
+    def test_resolve_target_agents_auto_expansion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            tmp_path.joinpath(".cursor", "rules").mkdir(parents=True)
+            env = {"CLAUDE_CODE": "1"}
+            selected, unknown = scaffold_rules.resolve_target_agents("auto", tmp_path, env=env)
+            self.assertEqual(unknown, [])
+            self.assertIn("agents", selected)
+            self.assertIn("claude", selected)
+            self.assertIn("cursor", selected)
+
+    def test_resolve_target_agents_current_expansion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            env = {"WINDSURF_AGENT": "1"}
+            selected, unknown = scaffold_rules.resolve_target_agents("current", tmp_path, env=env)
+            self.assertEqual(unknown, [])
+            self.assertEqual(selected, ["agents", "windsurf"])
+
+    def test_detect_active_only_flag(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            code, out, _err = QuietResult.run(
+                scaffold_rules.main, ["detect", "--dir", str(tmp_path), "--active-only"]
+            )
+            self.assertEqual(code, 0)
+            self.assertTrue(out.strip() in list(scaffold_rules.AGENT_TARGET_MAP) + ["none"])
+
+
 class TestAgentTargetSelection(unittest.TestCase):
     """The injected target set must be an explicit, confirmed subset."""
 

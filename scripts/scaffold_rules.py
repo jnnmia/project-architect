@@ -17,6 +17,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from pathlib import Path
@@ -146,6 +147,157 @@ AGENT_SIGNATURES: dict[str, tuple[str, ...]] = {
     "cline": (".clinerules", ".cline"),
     "continue": (".continue",),
 }
+
+# Environment variable indicators for active runtime agents.
+# Maps each agent key to environment variable names that indicate the agent
+# is currently executing the process or session.
+ACTIVE_AGENT_INDICATORS: dict[str, tuple[str, ...]] = {
+    "claude": (
+        "CLAUDE_CODE",
+        "CLAUDE_PROJECT_DIR",
+        "CLAUDE_SHELL",
+        "CLAUDE_ENTRYPOINT",
+    ),
+    "cursor": (
+        "CURSOR_AGENT",
+        "CURSOR_TRACE_ID",
+        "CURSOR_VERSION",
+    ),
+    "gemini": (
+        "ANTIGRAVITY_AGENT",
+        "ANTIGRAVITY_APP_DATA_DIR",
+        "ANTIGRAVITY_PROJECT_ID",
+        "GEMINI_CLI",
+        "GEMINI_PROJECT_DIR",
+        "GEMINI_SYSTEM_MD",
+    ),
+    "windsurf": (
+        "WINDSURF_AGENT",
+        "WINDSURF_VERSION",
+        "CODEIUM_API_KEY",
+    ),
+    "trae": (
+        "TRAE_AGENT",
+        "TRAE_VERSION",
+    ),
+    "cline": (
+        "CLINE_AGENT",
+        "CLINE_DIR",
+        "CLINE_API_KEY",
+        "ROO_CODE_AGENT",
+        "ROO_CODE_DIR",
+    ),
+    "continue": (
+        "CONTINUE_GLOBAL_DIR",
+        "CONTINUE_DEVELOPMENT",
+        "CONTINUE_AGENT",
+    ),
+    "copilot": (
+        "GITHUB_COPILOT",
+        "GITHUB_COPILOT_API_KEY",
+        "COPILOT_AGENT",
+        "GH_COPILOT",
+    ),
+}
+
+
+def _detect_ancestor_process_names() -> list[str]:
+    """Retrieve ancestor process names using standard /proc where available."""
+    names: list[str] = []
+    proc_dir = Path("/proc")
+    if proc_dir.is_dir():
+        try:
+            curr_pid = os.getpid()
+            for _ in range(5):
+                status_file = proc_dir / str(curr_pid) / "status"
+                if not status_file.is_file():
+                    break
+                text = status_file.read_text(encoding="utf-8", errors="ignore")
+                ppid = None
+                name = None
+                for line in text.splitlines():
+                    if line.startswith("Name:"):
+                        name = line.split(":", 1)[1].strip()
+                    elif line.startswith("PPid:"):
+                        try:
+                            ppid = int(line.split(":", 1)[1].strip())
+                        except ValueError:
+                            ppid = None
+                if name:
+                    names.append(name.lower())
+                if not ppid or ppid <= 1 or ppid == curr_pid:
+                    break
+                curr_pid = ppid
+        except Exception:
+            pass
+    return names
+
+
+def detect_active_agents(env: dict[str, str] | None = None) -> list[tuple[str, str]]:
+    """Detect AI agent tools currently active in the execution runtime.
+
+    Returns a list of (agent_key, reason) tuples.
+    Checks explicit environment overrides first, then dedicated environment
+    variables, terminal emulator markers, and ancestor processes.
+    """
+    if env is None:
+        env = os.environ  # type: ignore[assignment]
+
+    results: list[tuple[str, str]] = []
+    seen: set[str] = set()
+
+    def _add(agent: str, reason: str) -> None:
+        if agent in AGENT_TARGET_MAP and agent not in seen:
+            seen.add(agent)
+            results.append((agent, reason))
+
+    # 1. Explicit override environment variables
+    for var in ("ACTIVE_AGENT", "CURRENT_AGENT", "AGENT_TOOL"):
+        val = env.get(var, "").strip().lower()
+        if val in AGENT_TARGET_MAP:
+            _add(val, f"explicit override via env '{var}'")
+
+    # 2. Dedicated environment variables
+    for agent, vars_list in ACTIVE_AGENT_INDICATORS.items():
+        for var in vars_list:
+            if env.get(var):
+                _add(agent, f"environment variable '{var}'")
+                break
+
+    # 3. Terminal emulator and IDE markers
+    term_emu = env.get("TERMINAL_EMULATOR", "").strip().lower()
+    if term_emu == "cursor":
+        _add("cursor", "terminal emulator 'Cursor'")
+
+    vscode_askpass = env.get("VSCODE_GIT_ASKPASS_EXTRA_ARGS", "").lower()
+    if "cursor" in vscode_askpass:
+        _add("cursor", "VS Code askpass argument containing 'cursor'")
+
+    # Prefix checks for IDE-specific vars (e.g. CURSOR_*, WINDSURF_*, TRAE_*)
+    for key in env:
+        if key.startswith("CURSOR_"):
+            _add("cursor", f"environment variable '{key}'")
+        elif key.startswith("WINDSURF_"):
+            _add("windsurf", f"environment variable '{key}'")
+        elif key.startswith("TRAE_"):
+            _add("trae", f"environment variable '{key}'")
+
+    # 4. Ancestor process inspection (Linux /proc)
+    for proc_name in _detect_ancestor_process_names():
+        for agent in AGENT_TARGET_MAP:
+            if agent in proc_name or (agent == "gemini" and "antigravity" in proc_name):
+                _add(agent, f"ancestor process '{proc_name}'")
+
+    return results
+
+
+def detect_active_agent(env: dict[str, str] | None = None) -> tuple[str | None, str]:
+    """Return the primary active agent (agent_key, reason) or (None, reason)."""
+    agents = detect_active_agents(env)
+    if agents:
+        return agents[0]
+    return (None, "no active agent environment detected")
+
 
 
 
@@ -588,8 +740,21 @@ def cmd_detect(args: argparse.Namespace) -> int:
         print(f"[ERROR] Target directory does not exist: {target_dir}", file=sys.stderr)
         return 2
 
+    active_agent, active_reason = detect_active_agent()
+
+    if getattr(args, "active_only", False):
+        if active_agent:
+            print(active_agent)
+            return 0
+        print("none")
+        return 1 if getattr(args, "fail_if_empty", False) else 0
+
     detected = detect_agent_signatures(target_dir)
 
+    if active_agent:
+        print(f"Active runtime agent : {active_agent} ({active_reason})")
+    else:
+        print(f"Active runtime agent : none ({active_reason})")
     print(f"Scanning {target_dir} for AI tool signatures\n")
     for agent in AGENT_TARGET_MAP:
         hits = detected.get(agent)
@@ -602,30 +767,41 @@ def cmd_detect(args: argparse.Namespace) -> int:
         # Not a failure of the tool: a brand-new project legitimately has no
         # traces. Calling it [FAIL] told people something was broken when the
         # only correct action is to go and ask.
+        if active_agent:
+            print(
+                f"\n[NOTICE] No supported AI tool signature found on disk, but active agent '{active_agent}' was detected.\n"
+                "         Nothing here to base a decision on - ask the user which tools "
+                "they use, and do NOT inject into everything.",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                "\n[NOTICE] No supported AI tool signature found. This project is either "
+                "brand new or uses tools this skill does not know about.\n"
+                "         Nothing here to base a decision on - ask the user which tools "
+                "they use, and do NOT inject into everything.",
+                file=sys.stderr,
+            )
+        if getattr(args, "fail_if_empty", False):
+            return 1
+        suggested_keys = ["agents", active_agent] if active_agent else []
+    else:
         print(
-            "\n[NOTICE] No supported AI tool signature found. This project is either "
-            "brand new or uses tools this skill does not know about.\n"
-            "         Nothing here to base a decision on - ask the user which tools "
-            "they use, and do NOT inject into everything.",
-            file=sys.stderr,
+            f"\n[SUCCESS] Found traces of {len(detected)} tool(s): {', '.join(detected)}"
         )
-        return 1 if getattr(args, "fail_if_empty", False) else 0
-
-
-    print(
-        f"\n[SUCCESS] Found traces of {len(detected)} tool(s): {', '.join(detected)}"
-    )
-    print(
-        "Evidence only, not consent: confirm with the user which of these they actually\n"
-        "use before injecting, and never add a tool they did not mention."
-    )
+        print(
+            "Evidence only, not consent: confirm with the user which of these they actually\n"
+            "use before injecting, and never add a tool they did not mention."
+        )
+        suggested_keys = list(dict.fromkeys(list(detected.keys()) + ([active_agent] if active_agent else [])))
 
     # Hand the next command over instead of making people reconstruct it from
     # the README. --agents still has to be edited down to the confirmed subset;
     # that edit is the whole point of the confirm step.
+    next_agents = ",".join(suggested_keys) if suggested_keys else "agents"
     print("\nNext step, once the user has confirmed the subset:")
     print(f"  python scripts/scaffold_rules.py inject \\")
-    print(f"    --dir \"{target_dir}\" --agents \"{','.join(detected)}\" --strict")
+    print(f"    --dir \"{target_dir}\" --agents \"{next_agents}\" --strict")
     print(
         "  Add --dry-run first to preview the change without writing anything."
     )
@@ -681,6 +857,41 @@ def summary_language(principles_data: list[tuple[str, list[str]]], content: str)
     return "zh" if contains_cjk(sample) else "en"
 
 
+def resolve_target_agents(
+    agents_arg: str,
+    target_dir: Path,
+    env: dict[str, str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Resolve comma-separated agent string, expanding 'auto' and 'current'.
+
+    Returns (selected_agents, unknown_agents).
+    """
+    raw_keys = [a.strip().lower() for a in agents_arg.split(",") if a.strip()]
+    has_auto = "auto" in raw_keys
+    has_current = "current" in raw_keys
+
+    if has_auto or has_current:
+        active_pairs = detect_active_agents(env=env)
+        active_keys = [agent for agent, _ in active_pairs]
+        disk_keys = list(detect_agent_signatures(target_dir).keys())
+        expanded_keys: list[str] = []
+        for key in raw_keys:
+            if key == "auto":
+                expanded_keys.extend(["agents"] + active_keys + disk_keys)
+            elif key == "current":
+                expanded_keys.extend(["agents"] + active_keys)
+            else:
+                expanded_keys.append(key)
+        raw_keys = expanded_keys
+        resolved = list(dict.fromkeys(raw_keys))
+        mode = "auto" if has_auto else "current"
+        print(f"[AUTO-DETECT] Expanded '--agents {mode}' to: {', '.join(resolved)}")
+
+    selected_agents = list(dict.fromkeys(raw_keys))
+    unknown_agents = [a for a in selected_agents if a not in AGENT_TARGET_MAP]
+    return selected_agents, unknown_agents
+
+
 def cmd_inject(args: argparse.Namespace) -> int:
     """Inject constitution summary into specified agent context files."""
     target_dir = Path(args.dir).resolve()
@@ -724,10 +935,7 @@ def cmd_inject(args: argparse.Namespace) -> int:
 
     summary_content = "\n".join(summary_lines)
 
-    raw_keys = [a.strip().lower() for a in args.agents.split(",") if a.strip()]
-    # 'claude,CLAUDE' written twice must not double-inject or inflate the count.
-    selected_agents = list(dict.fromkeys(raw_keys))
-    unknown_agents = [a for a in selected_agents if a not in AGENT_TARGET_MAP]
+    selected_agents, unknown_agents = resolve_target_agents(args.agents, target_dir)
     injected_count = 0
 
     for agent in selected_agents:
@@ -869,9 +1077,7 @@ def cmd_eject(args: argparse.Namespace) -> int:
         print(f"[ERROR] Target directory does not exist: {target_dir}", file=sys.stderr)
         return 2
 
-    raw_keys = [a.strip().lower() for a in args.agents.split(",") if a.strip()]
-    selected_agents = list(dict.fromkeys(raw_keys))
-    unknown_agents = [a for a in selected_agents if a not in AGENT_TARGET_MAP]
+    selected_agents, unknown_agents = resolve_target_agents(args.agents, target_dir)
 
     ejected_count = 0
     for agent in selected_agents:
@@ -963,6 +1169,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Exit with code 1 if no tool signatures are detected (default: exit 0 with notice)",
     )
+    p_detect.add_argument(
+        "--active-only",
+        action="store_true",
+        help="Print only the detected active runtime agent key or 'none'",
+    )
 
     # Inject
     p_inject = subparsers.add_parser("inject", help="Inject rules into agent context files")
@@ -971,7 +1182,9 @@ def main(argv: list[str] | None = None) -> int:
         "--agents",
         required=True,
         help="Comma-separated agent keys to inject into: "
-             f"{', '.join(AGENT_TARGET_MAP)}. "
+             f"{', '.join(AGENT_TARGET_MAP)}, or 'auto' / 'current'. "
+             "'auto' automatically binds 'agents' + active runtime agent + on-disk detected tools. "
+             "'current' binds 'agents' + active runtime agent. "
              "Deliberately has no default: injecting into a tool the user does not "
              "use litters their repository, so the target set must be an explicit "
              "decision (run 'detect' first, then confirm with the user).",
@@ -1006,7 +1219,7 @@ def main(argv: list[str] | None = None) -> int:
     p_eject.add_argument(
         "--agents",
         required=True,
-        help=f"Comma-separated agent keys to eject rules from: {', '.join(AGENT_TARGET_MAP)}",
+        help=f"Comma-separated agent keys to eject rules from: {', '.join(AGENT_TARGET_MAP)}, or 'auto' / 'current'",
     )
     p_eject.add_argument(
         "--dry-run",

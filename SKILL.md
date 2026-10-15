@@ -3,15 +3,10 @@ name: project-architect
 description: "用于新项目立项、技术选型对比与规则脚手架生成。分析业务需求与非功能指标，确立核心工程规则（分层隔离、单测保障、依赖控制），并自动生成或同步到 Cursor、Claude Code、GitHub Copilot、Gemini CLI 等工具的上下文规则文件。当用户需要新项目立项、技术选型权衡、搭建工程规范脚手架或初始化 AI 规则时使用。"
 compatibility: "需要本地已安装 Python 3 环境（支持标准库）。"
 allowed-tools: read edit glob grep bash
-metadata:
-  version: "1.2.0"
-  author: jnnmia
-  agent_created: true
-  tags:
-    - architecture
-    - tech-stack
-    - ground-rules
-    - checkpoints
+version: "1.2.1"
+author: jnnmia
+agent_created: true
+tags: [architecture, tech-stack, ground-rules, checkpoints]
 ---
 
 
@@ -57,11 +52,12 @@ metadata:
 注入是**往用户仓库里写文件**。给一个只用 Cursor 的工程塞进 `.trae/rules/`、`.windsurf/rules/`、`GEMINI.md`，
 不是「顺手多做了点」，而是污染用户的代码库。因此注入目标 MUST 是**用户确认过的子集**，顺序固定为三步：
 
-1. **先探测**：执行 `detect`，拿到「工程里已经有哪些工具痕迹」的客观证据。此步只读，不写任何文件。
-2. **再确认**：把结果整理成多选，**问用户实际在用哪些工具**。两点必须守住：
-   - 探测结果是**证据，不是授权**。扫到了不等于用户同意，仍要问。
-   - 探测为空（全新工程）时**更要问** —— 这时没有任何依据可以替你作答。
-3. **只注入已确认的**：`--agents` 只填用户确认的键。用户没提到的工具，即使探测到了也不注入。
+1. **先探测**：执行 `detect`，自动识别**当前正在使用的 Agent 工具**（基于环境变量、终端与进程特征），并扫描「工程里已有哪些工具痕迹」。此步只读，不写任何文件。
+2. **再确认**：结合自动识别出的当前 Agent 工具与工程痕迹向用户确认。两点必须守住：
+   - 自动识别到当前正在使用的 Agent 时（如 Cursor / Claude Code / Gemini 等），**优先推荐当前工具**进行注入，无需让用户从空白列表中盲选。
+   - 探测结果是**客观证据与智能推荐，不是越权授权**。扫到了/识别到了仍要跟用户确认。
+   - 探测为空且未检测到活跃环境标志时**更要问**。
+3. **只注入已确认的**：`--agents` 只填用户确认的键（支持填 `auto` 自动绑定当前活跃及已有工具，或显式指定子集）。用户没提到的工具，即使探测到了也不注入。
 
 > **`agents` 的例外**：`AGENTS.md` 是跨工具通用的规则入口（`init` 本身就会创建它），可视作默认随附项；
 > 其余目标（claude / copilot / gemini / cursor / windsurf / trae / cline / continue）MUST 逐个确认。
@@ -69,7 +65,7 @@ metadata:
 > **执行位置**：以下命令一律在**本 skill 根目录**（即同时含 `scripts/` 与 `assets/templates/` 的那一层）下运行。脚本以自身位置定位模板资源，`--dir` 才指向目标工程；写死任何安装前缀（如 `skills/project-architect/...`）在不同安装方式下都会失效。
 
 ```bash
-# 0. 探测工程里已有哪些 AI 工具痕迹（只读，用于提问前先掌握证据）
+# 0. 探测工程痕迹与当前正在运行的 Agent 环境（只读，掌握客观证据）
 python scripts/scaffold_rules.py detect \
   --dir <项目路径>
 
@@ -150,11 +146,11 @@ python scripts/scaffold_rules.py eject \
 ### 轮次 3：确认目标工具、确立底线规则并执行脚手架
 - **用户**：方案合适，就按 Go 方案立规矩并生成脚手架。
 - **Agent**：
-  > 生成前先确认注入范围。我扫了一下 `md2pdf/`，工程还是全新的、没有任何 AI 工具痕迹，所以只能问你：
-  > 这个库平时用哪些工具配合？Cursor / Claude Code / GitHub Copilot / Gemini CLI / Windsurf / Trae。
-  > - **推荐：只勾你真实在用的。**没在用的工具不注入 —— 否则会在你仓库里平白多出 `.trae/`、`.windsurf/` 这类目录。
+  > 生成前先确认注入范围。已自动识别到当前环境正在使用 Cursor，且工程尚未有其他 AI 工具痕迹：
+  > 是否确认为当前 Cursor（以及跨工具通用入口 AGENTS.md）注入规则？如平时还会配合其他工具（如 Claude Code），可一并确认。
+  > - **推荐：优先注入当前正在使用的 Cursor。**没在用的工具不注入 —— 避免在你仓库里平白多出 `.trae/`、`.windsurf/` 这类目录。
   > - `AGENTS.md` 是跨工具通用入口，会照常生成，不用单独选。
-- **用户**：Cursor 和 Claude Code。
+- **用户**：好的，确认注入 Cursor 和 Claude Code。
 - **Agent**：
   1. 调用 `scaffold_rules.py init --name "md2pdf" --purpose "轻量离线 Markdown 转 PDF 命令行工具"`
   2. 生成不可违背的底线规则：
